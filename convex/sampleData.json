@@ -1,0 +1,187 @@
+{
+  "users": [
+    {
+      "id": "user_1",
+      "email": "john.doe@example.com",
+      "name": "John Doe",
+      "profileImage": "https://example.com/profiles/john.jpg",
+      "createdAt": "2024-01-01T00:00:00Z",
+      "preferences": {
+        "defaultCurrency": "USD",
+        "notifications": true,
+        "twoFactorEnabled": true
+      }
+    },
+    {
+      "id": "user_2",
+      "email": "jane.smith@example.com",
+      "name": "Jane Smith",
+      "profileImage": "https://example.com/profiles/jane.jpg",
+      "createdAt": "2024-01-02T00:00:00Z",
+      "preferences": {
+        "defaultCurrency": "EUR",
+        "notifications": true,
+        "twoFactorEnabled": false
+      }
+    }
+  ],
+  "accounts": [
+    {
+      "id": "acc_1",
+      "userId": "user_1",
+      "type": "personal",
+      "name": "Personal Account",
+      "createdAt": "2024-01-01T00:00:00Z",
+      "status": "active"
+    },
+    {
+      "id": "acc_2",
+      "userId": "user_1",
+      "type": "business",
+      "name": "Business Account",
+      "createdAt": "2024-01-01T00:00:00Z",
+      "status": "active",
+      "businessDetails": {
+        "companyName": "Doe Enterprises",
+        "registrationNumber": "BE123456",
+        "type": "LLC"
+      }
+    }
+  ],
+  "wallets": [
+    {
+      "id": "wallet_1",
+      "accountId": "acc_1",
+      "type": "spending",
+      "name": "Daily Expenses",
+      "balance": 1500000,
+      "currency": "sats",
+      "createdAt": "2024-01-01T00:00:00Z",
+      "lastUpdated": "2024-01-28T00:00:00Z"
+    },
+    {
+      "id": "wallet_2",
+      "accountId": "acc_1",
+      "type": "savings",
+      "name": "Long-term Savings",
+      "balance": 10000000,
+      "currency": "sats",
+      "createdAt": "2024-01-01T00:00:00Z",
+      "lastUpdated": "2024-01-28T00:00:00Z"
+    },
+    {
+      "id": "wallet_3",
+      "accountId": "acc_2",
+      "type": "business",
+      "name": "Business Operations",
+      "balance": 5000000,
+      "currency": "sats",
+      "createdAt": "2024-01-01T00:00:00Z",
+      "lastUpdated": "2024-01-28T00:00:00Z"
+    }
+  ],
+  "boltCards": [
+    {
+      "id": "card_1",
+      "walletId": "wallet_1",
+      "name": "Daily Spender",
+      "status": "active",
+      "limitPerTransaction": 100000,
+      "dailyLimit": 500000,
+      "createdAt": "2024-01-01T00:00:00Z",
+      "lastUsed": "2024-01-28T00:00:00Z"
+    }
+  ],
+  "signers": [
+    {
+      "id": "signer_1",
+      "walletId": "wallet_3",
+      "userId": "user_1",
+      "role": "owner",
+      "publicKey": "02abc...def",
+      "weight": 2,
+      "addedAt": "2024-01-01T00:00:00Z"
+    },
+    {
+      "id": "signer_2",
+      "walletId": "wallet_3",
+      "userId": "user_2",
+      "role": "co-signer",
+      "publicKey": "03def...abc",
+      "weight": 1,
+      "addedAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "transactions": [
+    {
+      "id": "tx_1",
+      "walletId": "wallet_1",
+      "type": "payment",
+      "amount": 50000,
+      "fee": 100,
+      "status": "completed",
+      "timestamp": "2024-01-28T12:00:00Z",
+      "description": "Coffee shop payment",
+      "recipient": {
+        "name": "Coffee Shop",
+        "address": "bc1q..."
+      },
+      "metadata": {
+        "lightning": true,
+        "memo": "Morning coffee",
+        "tags": ["food", "drinks"]
+      }
+    },
+    {
+      "id": "tx_2",
+      "walletId": "wallet_2",
+      "type": "receive",
+      "amount": 1000000,
+      "fee": 0,
+      "status": "completed",
+      "timestamp": "2024-01-27T15:30:00Z",
+      "description": "Salary deposit",
+      "sender": {
+        "name": "Employer",
+        "address": "bc1q..."
+      },
+      "metadata": {
+        "lightning": false,
+        "memo": "January salary",
+        "tags": ["income", "salary"]
+      }
+    }
+  ],
+  "insights": [
+    {
+      "id": "insight_1",
+      "userId": "user_1",
+      "type": "spending_pattern",
+      "period": "2024-01",
+      "data": {
+        "totalSpent": 750000,
+        "categories": {
+          "food": 200000,
+          "transport": 150000,
+          "entertainment": 400000
+        },
+        "comparison": {
+          "previousPeriod": -50000,
+          "percentageChange": -6.25
+        }
+      }
+    },
+    {
+      "id": "insight_2",
+      "userId": "user_1",
+      "type": "savings_goal",
+      "period": "2024-Q1",
+      "data": {
+        "target": 15000000,
+        "current": 10000000,
+        "projectedDate": "2024-03-15T00:00:00Z",
+        "monthlyRequired": 2500000
+      }
+    }
+  ]
+}

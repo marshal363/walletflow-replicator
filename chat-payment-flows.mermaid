@@ -1,0 +1,46 @@
+flowchart TD
+    Start[User Sends Message] --> AIProcess{AI Detection}
+    
+    subgraph AIDetection[AI Processing]
+        AIProcess -->|Payment Detected| Analysis[Analyze Message]
+        Analysis --> Intent[Determine Intent]
+        Intent --> Amount[Extract Amount]
+        Amount --> Context[Understand Context]
+    end
+    
+    Analysis -->|No Payment| Continue[Continue Chat]
+    
+    Intent -->|Send Money| SendFlow[Send Flow]
+    Intent -->|Request Money| RequestFlow[Request Flow]
+    
+    subgraph InlineSuggestion[Inline Suggestion Display]
+        SendFlow --> InlineBubble[Show Payment Bubble]
+        InlineBubble --> Options{User Action}
+        Options -->|Accept| QuickPay[Quick Pay Modal]
+        Options -->|Modify| FullModal[Full Payment Modal]
+        Options -->|Dismiss| Dismiss[Hide Suggestion]
+    end
+    
+    subgraph PaymentModal[Payment Processing]
+        QuickPay --> Confirm{Confirm Payment}
+        FullModal --> InputAmount[Modify Amount]
+        InputAmount --> SelectNetwork[Select Network]
+        SelectNetwork --> AddNote[Add Note]
+        AddNote --> Confirm
+        
+        Confirm -->|Yes| Process[Process Payment]
+        Confirm -->|No| Cancel[Cancel Payment]
+        
+        Process --> Status{Payment Status}
+        Status -->|Success| Success[Show Success]
+        Status -->|Failed| Retry[Show Retry Option]
+    end
+    
+    subgraph ChatUpdates[Chat Updates]
+        Success --> UpdateChat[Update Chat]
+        UpdateChat --> ShowReceipt[Show Receipt]
+        ShowReceipt --> AddContext[Add Payment Context]
+        
+        Retry --> ErrorMessage[Show Error]
+        ErrorMessage --> RetryOption[Show Retry Option]
+    end

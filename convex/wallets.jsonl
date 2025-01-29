@@ -1,0 +1,15 @@
+{"accountId": "acc_dominus_business", "type": "business", "name": "Operations", "balance": 25000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_dominus_personal", "type": "spending", "name": "Daily Expenses", "balance": 5000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_dominus_personal", "type": "savings", "name": "Long-term Savings", "balance": 50000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_john_personal", "type": "spending", "name": "Daily Spending", "balance": 2000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_john_business", "type": "business", "name": "Consulting Income", "balance": 15000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_jane_personal", "type": "spending", "name": "Main Wallet", "balance": 3000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_jane_personal", "type": "savings", "name": "Emergency Fund", "balance": 20000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_alice_personal", "type": "spending", "name": "Daily Use", "balance": 1500000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_alice_business", "type": "business", "name": "Tech Solutions", "balance": 30000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_bob_personal", "type": "spending", "name": "Expenses", "balance": 1000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_carol_personal", "type": "savings", "name": "Vacation Fund", "balance": 5000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_david_business", "type": "business", "name": "Design Studio", "balance": 8000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_eva_personal", "type": "spending", "name": "Shopping", "balance": 2500000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_frank_personal", "type": "savings", "name": "Investment", "balance": 40000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"}
+{"accountId": "acc_grace_business", "type": "business", "name": "Gallery Operations", "balance": 12000000, "currency": "sats", "lastUpdated": "2024-01-28T00:00:00Z"} 

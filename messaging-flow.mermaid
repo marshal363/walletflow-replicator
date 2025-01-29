@@ -1,0 +1,20 @@
+sequenceDiagram
+    participant U as User
+    participant C as ChatList
+    participant S as Search
+    participant M as MessageThread
+    participant P as PaymentModal
+
+    U->>C: Open Messages
+    alt New Chat
+        C->>S: Create Chat
+        S->>M: Open Thread
+    else Existing Chat
+        C->>M: Open Thread
+    end
+    
+    M->>M: View Messages
+    alt Send Payment
+        M->>P: Open Payment
+        P->>M: Confirm Payment
+    end

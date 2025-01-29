@@ -1,0 +1,13 @@
+{"userId": "dominus", "type": "business", "name": "Mendacium Enterprises", "status": "active", "businessDetails": {"companyName": "Mendacium Enterprises LLC", "registrationNumber": "ME123456", "type": "LLC"}}
+{"userId": "dominusmendacium", "type": "personal", "name": "Personal Account", "status": "active"}
+{"userId": "john", "type": "personal", "name": "Daily Account", "status": "active"}
+{"userId": "john", "type": "business", "name": "John's Consulting", "status": "active", "businessDetails": {"companyName": "JD Consulting LLC", "registrationNumber": "JD789012", "type": "LLC"}}
+{"userId": "jane", "type": "personal", "name": "Main Account", "status": "active"}
+{"userId": "alice", "type": "personal", "name": "Primary Account", "status": "active"}
+{"userId": "alice", "type": "business", "name": "Alice's Tech", "status": "active", "businessDetails": {"companyName": "AT Solutions Inc", "registrationNumber": "AT345678", "type": "Corporation"}}
+{"userId": "bob", "type": "personal", "name": "Personal Account", "status": "active"}
+{"userId": "carol", "type": "personal", "name": "Main Account", "status": "active"}
+{"userId": "david", "type": "business", "name": "David's Design", "status": "active", "businessDetails": {"companyName": "DB Design Studio", "registrationNumber": "DD901234", "type": "LLC"}}
+{"userId": "eva", "type": "personal", "name": "Primary Account", "status": "active"}
+{"userId": "frank", "type": "personal", "name": "Personal Account", "status": "active"}
+{"userId": "grace", "type": "business", "name": "Grace's Gallery", "status": "active", "businessDetails": {"companyName": "GK Art Gallery", "registrationNumber": "GG567890", "type": "LLC"}} 
