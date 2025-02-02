@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Send, ArrowUpRight, ArrowDownLeft, CreditCard, QrCode, Lock } from 'lucide-react';
 import TransactionList from './TransactionList';
 import SpendingTrendWidget from './SpendingTrendWidget';
 import SuggestedActionsWidget from './SuggestedActionsWidget';
@@ -16,45 +17,64 @@ const mockTransactions = [
   { id: '4', name: 'Amazon', type: 'Online Purchase', amount: '-250,000', fiat: '-87.50', wallet: 'Spending', timestamp: '2024-01-19T22:30:00Z' }
 ];
 
+const wallets = [
+  {
+    id: 'spending',
+    type: 'Lightning',
+    name: 'Spending',
+    balance: '165,362',
+    fiatBalance: '52.92',
+    color: 'bg-purple-600',
+    accent: 'text-purple-500',
+    icon: '⚡️',
+    hasCard: true,
+    cardNumber: '0077'
+  },
+  {
+    id: 'savings',
+    type: 'Multisig',
+    name: 'Savings',
+    balance: '1,205,362',
+    fiatBalance: '385.72',
+    color: 'bg-orange-600',
+    accent: 'text-orange-500',
+    icon: '🔒',
+    hasCard: false
+  }
+];
+
+const quickActions = {
+  spending: [
+    { icon: Send, label: 'Send' },
+    { icon: ArrowDownLeft, label: 'Receive' },
+    { icon: CreditCard, label: 'Card' },
+    { icon: QrCode, label: 'Scan' }
+  ],
+  savings: [
+    { icon: ArrowUpRight, label: 'Deposit' },
+    { icon: ArrowDownLeft, label: 'Withdraw' },
+    { icon: Lock, label: 'Keys' },
+    { icon: QrCode, label: 'Scan' }
+  ]
+};
+
 interface HomeWidgetsProps {
-  wallets: {
-    id: string;
-    name: string;
-    type: string;
-    balance: string;
-    fiatBalance: string;
-    icon: string;
-    color: string;
-    accent?: string;
-    hasCard?: boolean;
-    cardNumber?: string;
-  }[];
   selectedWalletId: string;
-  onWalletSelect: (walletId: string) => void;
-  quickActions: {
-    [key: string]: {
-      icon: LucideIcon;
-      label: string;
-    }[];
-  };
-  currentWallet?: {
-    id: string;
-    accent?: string;
-  };
+  onWalletSelect: (id: string) => void;
 }
 
-const HomeWidgets: React.FC<HomeWidgetsProps> = ({
-  wallets,
+export default function HomeWidgets({
   selectedWalletId,
   onWalletSelect,
-  quickActions,
-  currentWallet
-}) => {
+}: HomeWidgetsProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [ref, inView] = useInView({
     threshold: 0.5,
     triggerOnce: false
   });
+
+  const currentWallet = wallets.find(w => w.id === selectedWalletId);
+  const currentActions = quickActions[selectedWalletId as keyof typeof quickActions] || [];
 
   const loadMoreWidgets = () => {
     setIsLoading(true);
@@ -75,10 +95,8 @@ const HomeWidgets: React.FC<HomeWidgetsProps> = ({
     console.log('Action clicked:', actionId);
   };
 
-  const currentActions = quickActions[selectedWalletId] || [];
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Suggested Actions Widget */}
       <div className="pt-2 pb-1">
         <SuggestedActionsWidget onActionClick={handleActionClick} />
@@ -174,7 +192,7 @@ const HomeWidgets: React.FC<HomeWidgetsProps> = ({
         />
       </motion.div>
 
-      {/* Trend Spending Widget */}
+      {/* Spending Trends Widget */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -228,6 +246,4 @@ const HomeWidgets: React.FC<HomeWidgetsProps> = ({
       </div>
     </div>
   );
-};
-
-export default HomeWidgets; 
+} 

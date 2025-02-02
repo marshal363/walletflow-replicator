@@ -110,10 +110,7 @@ const App = () => (
           />
           
           {/* Sign In route */}
-          <Route
-            path="/sign-in/*"
-            element={<RedirectToSignIn />}
-          />
+          <Route path="/sign-in/*" element={<RedirectToSignIn />} />
           
           {/* Catch all route */}
           <Route path="*" element={<Navigate to="/" replace />} />
