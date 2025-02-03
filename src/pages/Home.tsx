@@ -45,7 +45,7 @@ export default function Home() {
     <div className="min-h-screen">
       <main className="pb-20">
         <div className="space-y-6 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between px-4">
             <div 
               className="flex items-center space-x-2 cursor-pointer"
               onClick={() => setShowProfileModal(true)}

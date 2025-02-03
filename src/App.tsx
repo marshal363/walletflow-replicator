@@ -12,112 +12,46 @@ import Messages from "./pages/Messages";
 import MessageDetail from "./pages/MessageDetail";
 import PaymentFailed from "./pages/PaymentFailed";
 import Wallet from "./pages/Wallet";
-import { SignedIn, SignedOut, RedirectToSignIn } from "@clerk/clerk-react";
-import ProtectedRoute from "./components/ProtectedRoute";
+import SignInPage from "./pages/SignIn";
+import SignUpPage from "./pages/SignUp";
+import AuthProvider from "./components/AuthProvider";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          {/* Public route */}
-          <Route path="/" element={<Home />} />
-          
-          {/* Protected routes */}
-          <Route
-            path="/lightning"
-            element={
-              <ProtectedRoute>
-                <Lightning />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/wallet"
-            element={
-              <ProtectedRoute>
-                <Wallet />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/send"
-            element={
-              <ProtectedRoute>
-                <Send />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/send/:id"
-            element={
-              <ProtectedRoute>
-                <Send />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/request/:id"
-            element={
-              <ProtectedRoute>
-                <Send />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/split/:id"
-            element={
-              <ProtectedRoute>
-                <Send />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/amount/:id"
-            element={
-              <ProtectedRoute>
-                <Amount />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/messages"
-            element={
-              <ProtectedRoute>
-                <Messages />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/messages/:id"
-            element={
-              <ProtectedRoute>
-                <MessageDetail />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/payment-failed"
-            element={
-              <ProtectedRoute>
-                <PaymentFailed />
-              </ProtectedRoute>
-            }
-          />
-          
-          {/* Sign In route */}
-          <Route path="/sign-in/*" element={<RedirectToSignIn />} />
-          
-          {/* Catch all route */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+const App = () => {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AuthProvider>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<Home />} />
+              <Route path="/sign-in/*" element={<SignInPage />} />
+              <Route path="/sign-up/*" element={<SignUpPage />} />
+              
+              {/* App routes */}
+              <Route path="/lightning" element={<Lightning />} />
+              <Route path="/wallet" element={<Wallet />} />
+              <Route path="/send" element={<Send />} />
+              <Route path="/send/:id" element={<Send />} />
+              <Route path="/request/:id" element={<Send />} />
+              <Route path="/split/:id" element={<Send />} />
+              <Route path="/amount/:id" element={<Amount />} />
+              <Route path="/messages" element={<Messages />} />
+              <Route path="/messages/:id" element={<MessageDetail />} />
+              <Route path="/payment-failed" element={<PaymentFailed />} />
+              
+              {/* Catch all route */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;
