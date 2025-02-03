@@ -43,12 +43,25 @@ export default defineSchema({
     type: v.union(v.literal("personal"), v.literal("business")),
     name: v.string(),
     status: v.union(v.literal("active"), v.literal("inactive"), v.literal("suspended")),
+    
+    // Identity generation metadata
+    identitySettings: v.object({
+      username: v.string(),  // Base username for all addresses
+      domain: v.string(),    // Default: bitchat.com
+      customDomain: v.optional(v.string()), // For business accounts
+      prefix: v.optional(v.string()),  // For business accounts: company-name-
+      suffix: v.optional(v.string()),  // For business accounts: -department
+    }),
+    
     businessDetails: v.optional(v.object({
       companyName: v.string(),
       registrationNumber: v.string(),
       type: v.string(),
     })),
-  }).index("by_user_id", ["userId"]),
+  })
+  .index("by_user_id", ["userId"])
+  .index("by_user_and_type", ["userId", "type"])
+  .index("by_username", ["identitySettings.username"]),
 
   // Wallets table
   wallets: defineTable({
@@ -56,13 +69,50 @@ export default defineSchema({
     type: v.union(
       v.literal("spending"),
       v.literal("savings"),
-      v.literal("business")
+      v.literal("multisig")
     ),
     name: v.string(),
     balance: v.number(),
     currency: v.string(),
     lastUpdated: v.string(),
-  }).index("by_account_id", ["accountId"]),
+    
+    // Discriminated union based on wallet type
+    networkIdentities: v.union(
+      // Spending wallet identities
+      v.object({
+        type: v.literal("spending"),
+        lightning: v.string(), // username@bitchat.com
+        nostr: v.string(),    // username@bitchat.com
+      }),
+      
+      // Savings wallet identities
+      v.object({
+        type: v.literal("savings"),
+        bitcoinAddress: v.string(),      // Single address
+        derivationPath: v.string(),      // BIP32 path
+      }),
+      
+      // Multisig wallet identities
+      v.object({
+        type: v.literal("multisig"),
+        addresses: v.array(v.object({
+          address: v.string(),
+          signers: v.array(v.object({
+            pubKey: v.string(),
+            weight: v.number(),
+          })),
+          requiredSignatures: v.number(),
+        })),
+        scriptType: v.union(
+          v.literal("p2sh"),
+          v.literal("p2wsh"),
+          v.literal("p2tr")
+        ),
+      })
+    ),
+  })
+  .index("by_account_id", ["accountId"])
+  .index("by_account_and_type", ["accountId", "type"]),
 
   // Transactions table
   transactions: defineTable({
@@ -89,10 +139,18 @@ export default defineSchema({
       lightning: v.boolean(),
       memo: v.optional(v.string()),
       tags: v.array(v.string()),
+      network: v.union(
+        v.literal("bitcoin"),
+        v.literal("lightning"),
+        v.literal("nostr")
+      ),
     }),
   })
   .index("by_wallet_id", ["walletId"])
-  .index("by_status", ["status"]),
+  .index("by_wallet_and_type", ["walletId", "type"])
+  .index("by_wallet_and_status", ["walletId", "status"])
+  .index("by_timestamp", ["timestamp"])
+  .index("by_wallet_and_timestamp", ["walletId", "timestamp"]),
 
   // Messages table
   messages: defineTable({
@@ -126,4 +184,59 @@ export default defineSchema({
   .index("by_sender", ["senderId"])
   .index("by_receiver", ["receiverId"])
   .index("by_conversation", ["senderId", "receiverId"]),
+
+  // Notifications table
+  notifications: defineTable({
+    userId: v.id("users"),
+    type: v.union(
+      v.literal("payment_received"),
+      v.literal("payment_sent"),
+      v.literal("payment_request"),
+      v.literal("system")
+    ),
+    title: v.string(),
+    content: v.string(),
+    status: v.union(v.literal("read"), v.literal("unread")),
+    metadata: v.object({
+      actionUrl: v.string(),
+      relatedId: v.string(),
+      priority: v.union(
+        v.literal("low"),
+        v.literal("medium"),
+        v.literal("high")
+      ),
+    }),
+    createdAt: v.string(),
+  }).index("by_user", ["userId"]),
+
+  // Contacts table
+  contacts: defineTable({
+    userId: v.id("users"),
+    contactId: v.id("users"),
+    nickname: v.string(),
+    type: v.union(v.literal("personal"), v.literal("business")),
+    status: v.union(v.literal("active"), v.literal("blocked")),
+    metadata: v.object({
+      notes: v.optional(v.string()),
+      tags: v.array(v.string()),
+      lastInteraction: v.string(),
+    }),
+    createdAt: v.string(),
+  })
+  .index("by_user", ["userId"])
+  .index("by_contact", ["contactId"]),
+
+  // Bolt Cards table
+  boltCards: defineTable({
+    walletId: v.id("wallets"),
+    name: v.string(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("inactive"),
+      v.literal("suspended")
+    ),
+    limitPerTransaction: v.number(),
+    dailyLimit: v.number(),
+    lastUsed: v.string(),
+  }).index("by_wallet", ["walletId"]),
 }); 

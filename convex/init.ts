@@ -4,180 +4,200 @@ import { v } from "convex/values";
 export const initializeDatabase = mutation({
   args: {},
   handler: async (ctx) => {
-    // Create users
-    const user1 = await ctx.db.insert("users", {
-      name: "John Doe",
-      email: "john.doe@example.com",
-      profileImage: "https://example.com/profiles/john.jpg",
-      clerkId: "user_clerk_1", // Replace with actual Clerk ID
-      preferences: {
-        defaultCurrency: "USD",
-        notifications: true,
-        twoFactorEnabled: true,
-      },
-    });
-
-    const user2 = await ctx.db.insert("users", {
-      name: "Jane Smith",
-      email: "jane.smith@example.com",
-      profileImage: "https://example.com/profiles/jane.jpg",
-      clerkId: "user_clerk_2", // Replace with actual Clerk ID
-      preferences: {
-        defaultCurrency: "EUR",
-        notifications: true,
-        twoFactorEnabled: false,
-      },
-    });
-
-    // Create accounts
-    const personalAccount = await ctx.db.insert("accounts", {
-      userId: user1,
+    const now = new Date().toISOString();
+    
+    // Get existing users
+    const users = await ctx.db.query("users").collect();
+    if (users.length < 2) {
+      throw new Error("Please create sample users first using the createSampleUsers mutation");
+    }
+    
+    const [sergioUser, secondUser] = users;
+    
+    // Create accounts for both users
+    const sergioPersonalAccount = await ctx.db.insert("accounts", {
+      userId: sergioUser._id,
       type: "personal",
       name: "Personal Account",
       status: "active",
     });
 
-    const businessAccount = await ctx.db.insert("accounts", {
-      userId: user1,
+    const sergioBusinessAccount = await ctx.db.insert("accounts", {
+      userId: sergioUser._id,
       type: "business",
       name: "Business Account",
       status: "active",
       businessDetails: {
-        companyName: "Doe Enterprises",
-        registrationNumber: "BE123456",
+        companyName: "Sergio's Tech",
+        registrationNumber: "BT123456",
         type: "LLC",
       },
     });
 
-    // Create wallets
-    const spendingWallet = await ctx.db.insert("wallets", {
-      accountId: personalAccount,
+    const secondUserPersonalAccount = await ctx.db.insert("accounts", {
+      userId: secondUser._id,
+      type: "personal",
+      name: "Personal Account",
+      status: "active",
+    });
+
+    // Create wallets for each account
+    const sergioSpendingWallet = await ctx.db.insert("wallets", {
+      accountId: sergioPersonalAccount,
       type: "spending",
       name: "Daily Expenses",
-      balance: 1500000,
+      balance: 2500000, // 2.5M sats
       currency: "sats",
-      lastUpdated: new Date().toISOString(),
+      lastUpdated: now,
     });
 
-    const savingsWallet = await ctx.db.insert("wallets", {
-      accountId: personalAccount,
+    const sergioSavingsWallet = await ctx.db.insert("wallets", {
+      accountId: sergioPersonalAccount,
       type: "savings",
       name: "Long-term Savings",
-      balance: 10000000,
+      balance: 15000000, // 15M sats
       currency: "sats",
-      lastUpdated: new Date().toISOString(),
+      lastUpdated: now,
     });
 
-    const businessWallet = await ctx.db.insert("wallets", {
-      accountId: businessAccount,
+    const sergioBusinessWallet = await ctx.db.insert("wallets", {
+      accountId: sergioBusinessAccount,
       type: "business",
       name: "Business Operations",
-      balance: 5000000,
+      balance: 7500000, // 7.5M sats
       currency: "sats",
-      lastUpdated: new Date().toISOString(),
+      lastUpdated: now,
     });
 
-    // Create bolt card
-    await ctx.db.insert("boltCards", {
-      walletId: spendingWallet,
-      name: "Daily Spender",
-      status: "active",
-      limitPerTransaction: 100000,
-      dailyLimit: 500000,
-      lastUsed: new Date().toISOString(),
+    const secondUserSpendingWallet = await ctx.db.insert("wallets", {
+      accountId: secondUserPersonalAccount,
+      type: "spending",
+      name: "Daily Expenses",
+      balance: 1800000, // 1.8M sats
+      currency: "sats",
+      lastUpdated: now,
     });
 
-    // Create signers
-    await ctx.db.insert("signers", {
-      walletId: businessWallet,
-      userId: user1,
-      role: "owner",
-      publicKey: "02abc...def",
-      weight: 2,
-    });
-
-    await ctx.db.insert("signers", {
-      walletId: businessWallet,
-      userId: user2,
-      role: "co-signer",
-      publicKey: "03def...abc",
-      weight: 1,
-    });
-
-    // Create transactions
+    // Create some transactions
     await ctx.db.insert("transactions", {
-      walletId: spendingWallet,
+      walletId: sergioSpendingWallet,
       type: "payment",
-      amount: 50000,
+      amount: 150000,
       fee: 100,
       status: "completed",
-      timestamp: new Date().toISOString(),
-      description: "Coffee shop payment",
+      timestamp: now,
+      description: "Coffee and lunch",
       recipient: {
-        name: "Coffee Shop",
-        address: "bc1q...",
+        name: "Local Cafe",
+        address: "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
       },
       metadata: {
         lightning: true,
-        memo: "Morning coffee",
-        tags: ["food", "drinks"],
+        memo: "Lunch with team",
+        tags: ["food", "business"],
       },
     });
 
-    // Create contacts
-    await ctx.db.insert("contacts", {
-      userId: user1,
-      contactId: user2,
-      nickname: "Jane",
-      type: "personal",
-      status: "active",
-      metadata: {
-        notes: "Roommate",
-        tags: ["friend", "roommate"],
-        lastInteraction: new Date().toISOString(),
+    await ctx.db.insert("transactions", {
+      walletId: sergioSpendingWallet,
+      type: "receive",
+      amount: 500000,
+      fee: 0,
+      status: "completed",
+      timestamp: now,
+      description: "Payment from client",
+      sender: {
+        name: "Client Co.",
+        address: "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
       },
-      createdAt: new Date().toISOString(),
+      metadata: {
+        lightning: true,
+        memo: "Website development",
+        tags: ["income", "freelance"],
+      },
+    });
+
+    // Create messages between users
+    await ctx.db.insert("messages", {
+      senderId: sergioUser._id,
+      receiverId: secondUser._id,
+      type: "text",
+      content: "Hey! Can you send me that invoice?",
+      status: "delivered",
+      timestamp: now,
+    });
+
+    await ctx.db.insert("messages", {
+      senderId: secondUser._id,
+      receiverId: sergioUser._id,
+      type: "payment_request",
+      content: "Invoice for website work",
+      status: "read",
+      metadata: {
+        paymentAmount: 500000,
+        paymentCurrency: "sats",
+        paymentStatus: "completed",
+      },
+      timestamp: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
     });
 
     // Create notifications
     await ctx.db.insert("notifications", {
-      userId: user1,
+      userId: sergioUser._id,
       type: "payment_received",
       title: "Payment Received",
-      content: "You received 25000 sats from Jane Smith",
+      content: "You received 500,000 sats from Client Co.",
       status: "unread",
       metadata: {
-        actionUrl: "/transactions/tx_2",
-        relatedId: "tx_2",
-        priority: "medium",
+        actionUrl: "/transactions/latest",
+        relatedId: "tx_1",
+        priority: "high",
       },
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     });
 
-    // Create activity logs
-    await ctx.db.insert("activityLogs", {
-      userId: user1,
-      type: "payment",
-      action: "send_payment",
-      status: "success",
+    // Create contacts
+    await ctx.db.insert("contacts", {
+      userId: sergioUser._id,
+      contactId: secondUser._id,
+      nickname: "Sergio A.",
+      type: "business",
+      status: "active",
       metadata: {
-        ipAddress: "192.168.1.1",
-        deviceInfo: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-        location: "San Francisco, CA",
-        details: {
-          amount: 50000,
-          recipient: "Coffee Shop",
-          walletId: spendingWallet,
-        },
+        notes: "Developer colleague",
+        tags: ["work", "developer"],
+        lastInteraction: now,
       },
-      timestamp: new Date().toISOString(),
+      createdAt: now,
+    });
+
+    // Create bolt cards
+    await ctx.db.insert("boltCards", {
+      walletId: sergioSpendingWallet,
+      name: "Daily Card",
+      status: "active",
+      limitPerTransaction: 100000,
+      dailyLimit: 500000,
+      lastUsed: now,
     });
 
     return {
-      message: "Database initialized with sample data",
-      users: [user1, user2],
-      accounts: [personalAccount, businessAccount],
-      wallets: [spendingWallet, savingsWallet, businessWallet],
+      message: "Database initialized with mock data",
+      users: {
+        sergioUser: sergioUser._id,
+        secondUser: secondUser._id,
+      },
+      accounts: {
+        sergioPersonalAccount,
+        sergioBusinessAccount,
+        secondUserPersonalAccount,
+      },
+      wallets: {
+        sergioSpendingWallet,
+        sergioSavingsWallet,
+        sergioBusinessWallet,
+        secondUserSpendingWallet,
+      },
     };
   },
 }); 
