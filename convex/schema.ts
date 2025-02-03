@@ -160,7 +160,8 @@ export default defineSchema({
       v.literal("text"),
       v.literal("payment_request"),
       v.literal("payment_sent"),
-      v.literal("payment_received")
+      v.literal("payment_received"),
+      v.literal("system")
     ),
     content: v.string(),
     status: v.union(
@@ -168,7 +169,13 @@ export default defineSchema({
       v.literal("delivered"),
       v.literal("read")
     ),
-    metadata: v.optional(v.object({
+    metadata: v.object({
+      // Nostr-specific fields
+      nostrEventId: v.optional(v.string()),
+      nostrPubkey: v.optional(v.string()),
+      nostrRelays: v.optional(v.array(v.string())),
+      
+      // Payment-related fields
       paymentAmount: v.optional(v.number()),
       paymentCurrency: v.optional(v.string()),
       paymentStatus: v.optional(v.union(
@@ -177,21 +184,84 @@ export default defineSchema({
         v.literal("expired"),
         v.literal("cancelled")
       )),
+      paymentType: v.optional(v.union(
+        v.literal("lightning"),
+        v.literal("onchain")
+      )),
+      paymentRequest: v.optional(v.string()), // Lightning invoice or BTC address
+      
+      // Message context
+      replyTo: v.optional(v.id("messages")),
       attachments: v.optional(v.array(v.string())),
-    })),
+      reactions: v.optional(v.array(v.object({
+        emoji: v.string(),
+        userId: v.id("users"),
+        timestamp: v.string()
+      }))),
+    }),
     timestamp: v.string(),
+    expiresAt: v.optional(v.string()), // For payment requests
   })
   .index("by_sender", ["senderId"])
   .index("by_receiver", ["receiverId"])
-  .index("by_conversation", ["senderId", "receiverId"]),
+  .index("by_conversation", ["senderId", "receiverId"])
+  .index("by_nostr_event", ["metadata.nostrEventId"])
+  .index("by_payment_status", ["metadata.paymentStatus"]),
 
-  // Notifications table
+  // Payment Requests table
+  paymentRequests: defineTable({
+    requesterId: v.id("users"),
+    recipientId: v.id("users"),
+    messageId: v.id("messages"),
+    amount: v.number(),
+    currency: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("completed"),
+      v.literal("expired"),
+      v.literal("cancelled")
+    ),
+    type: v.union(
+      v.literal("lightning"),
+      v.literal("onchain")
+    ),
+    metadata: v.object({
+      description: v.string(),
+      expiresAt: v.string(),
+      paymentRequest: v.string(), // Lightning invoice or BTC address
+      splitWith: v.optional(v.array(v.object({
+        userId: v.id("users"),
+        amount: v.number(),
+        status: v.union(
+          v.literal("pending"),
+          v.literal("paid"),
+          v.literal("declined")
+        )
+      }))),
+      customData: v.optional(v.object({
+        category: v.optional(v.string()),
+        tags: v.optional(v.array(v.string())),
+        notes: v.optional(v.string())
+      }))
+    }),
+    createdAt: v.string(),
+    updatedAt: v.string()
+  })
+  .index("by_requester", ["requesterId"])
+  .index("by_recipient", ["recipientId"])
+  .index("by_message", ["messageId"])
+  .index("by_status", ["status"])
+  .index("by_expiry", ["metadata.expiresAt"]),
+
+  // Notifications table - Enhanced
   notifications: defineTable({
     userId: v.id("users"),
     type: v.union(
       v.literal("payment_received"),
       v.literal("payment_sent"),
       v.literal("payment_request"),
+      v.literal("payment_reminder"),
+      v.literal("message"),
       v.literal("system")
     ),
     title: v.string(),
@@ -199,15 +269,40 @@ export default defineSchema({
     status: v.union(v.literal("read"), v.literal("unread")),
     metadata: v.object({
       actionUrl: v.string(),
-      relatedId: v.string(),
+      relatedId: v.string(), // Can reference messageId, paymentRequestId, etc.
+      relatedType: v.union(
+        v.literal("message"),
+        v.literal("payment_request"),
+        v.literal("transaction"),
+        v.literal("system")
+      ),
       priority: v.union(
         v.literal("low"),
         v.literal("medium"),
         v.literal("high")
       ),
+      // Payment-specific data
+      paymentData: v.optional(v.object({
+        amount: v.number(),
+        currency: v.string(),
+        type: v.union(
+          v.literal("lightning"),
+          v.literal("onchain")
+        ),
+        status: v.union(
+          v.literal("pending"),
+          v.literal("completed"),
+          v.literal("failed")
+        )
+      }))
     }),
     createdAt: v.string(),
-  }).index("by_user", ["userId"]),
+    expiresAt: v.optional(v.string())
+  })
+  .index("by_user", ["userId"])
+  .index("by_status", ["status"])
+  .index("by_type", ["type"])
+  .index("by_related", ["metadata.relatedId"]),
 
   // Contacts table
   contacts: defineTable({
