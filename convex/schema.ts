@@ -2,6 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  // Users table (Primary)
   users: defineTable({
     // Clerk Identity Information
     clerkId: v.string(),
@@ -22,8 +23,8 @@ export default defineSchema({
       defaultCurrency: v.string(),
       notifications: v.boolean(),
       twoFactorEnabled: v.boolean(),
-      theme: v.optional(v.union(v.literal("light"), v.literal("dark"), v.literal("system"))),
-      language: v.optional(v.string()),
+      theme: v.union(v.literal("light"), v.literal("dark"), v.literal("system")),
+      language: v.string(),
     }),
     
     // User Status
@@ -45,13 +46,13 @@ export default defineSchema({
     status: v.union(v.literal("active"), v.literal("inactive"), v.literal("suspended")),
     
     // Identity generation metadata
-    identitySettings: v.object({
+    identitySettings: v.optional(v.object({
       username: v.string(),  // Base username for all addresses
       domain: v.string(),    // Default: bitchat.com
       customDomain: v.optional(v.string()), // For business accounts
       prefix: v.optional(v.string()),  // For business accounts: company-name-
       suffix: v.optional(v.string()),  // For business accounts: -department
-    }),
+    })),
     
     businessDetails: v.optional(v.object({
       companyName: v.string(),
@@ -59,9 +60,9 @@ export default defineSchema({
       type: v.string(),
     })),
   })
-  .index("by_user_id", ["userId"])
+  .index("by_user", ["userId"])
   .index("by_user_and_type", ["userId", "type"])
-  .index("by_username", ["identitySettings.username"]),
+  .index("by_identity_username", ["identitySettings.username"]),
 
   // Wallets table
   wallets: defineTable({
@@ -112,7 +113,8 @@ export default defineSchema({
     ),
   })
   .index("by_account_id", ["accountId"])
-  .index("by_account_and_type", ["accountId", "type"]),
+  .index("by_account_and_type", ["accountId", "type"])
+  .index("by_account_and_balance", ["accountId", "balance"]),
 
   // Transactions table
   transactions: defineTable({
@@ -139,11 +141,6 @@ export default defineSchema({
       lightning: v.boolean(),
       memo: v.optional(v.string()),
       tags: v.array(v.string()),
-      network: v.union(
-        v.literal("bitcoin"),
-        v.literal("lightning"),
-        v.literal("nostr")
-      ),
     }),
   })
   .index("by_wallet_id", ["walletId"])

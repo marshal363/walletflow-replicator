@@ -1,13 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Send, ArrowUpRight, ArrowDownLeft, CreditCard, QrCode, Lock } from 'lucide-react';
 import TransactionList from './TransactionList';
 import SpendingTrendWidget from './SpendingTrendWidget';
 import SuggestedActionsWidget from './SuggestedActionsWidget';
-import { useInView } from 'react-intersection-observer';
 import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
 import { Card, CardContent } from "@/components/ui/card";
-import { LucideIcon } from 'lucide-react';
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import { useUser } from "@clerk/clerk-react";
+import { Id } from "../../../convex/_generated/dataModel";
+import { useUserAccountsAndWallets } from "../../hooks/useUserAccountsAndWallets";
+import { formatCurrency } from "@/lib/utils";
 
 // Mock data - Replace with real data later
 const mockTransactions = [
@@ -15,32 +19,6 @@ const mockTransactions = [
   { id: '2', name: 'MAXI', type: 'Montréal, QC', amount: '-128,821', fiat: '-16.00', wallet: 'Spending', timestamp: '2024-01-20T09:15:00Z' },
   { id: '3', name: 'Starbucks', type: 'Apple Pay', amount: '-15,000', fiat: '-5.25', wallet: 'Spending', timestamp: '2024-01-20T08:45:00Z' },
   { id: '4', name: 'Amazon', type: 'Online Purchase', amount: '-250,000', fiat: '-87.50', wallet: 'Spending', timestamp: '2024-01-19T22:30:00Z' }
-];
-
-const wallets = [
-  {
-    id: 'spending',
-    type: 'Lightning',
-    name: 'Spending',
-    balance: '165,362',
-    fiatBalance: '52.92',
-    color: 'bg-purple-600',
-    accent: 'text-purple-500',
-    icon: '⚡️',
-    hasCard: true,
-    cardNumber: '0077'
-  },
-  {
-    id: 'savings',
-    type: 'Multisig',
-    name: 'Savings',
-    balance: '1,205,362',
-    fiatBalance: '385.72',
-    color: 'bg-orange-600',
-    accent: 'text-orange-500',
-    icon: '🔒',
-    hasCard: false
-  }
 ];
 
 const quickActions = {
@@ -55,7 +33,31 @@ const quickActions = {
     { icon: ArrowDownLeft, label: 'Withdraw' },
     { icon: Lock, label: 'Keys' },
     { icon: QrCode, label: 'Scan' }
+  ],
+  multisig: [
+    { icon: ArrowUpRight, label: 'Deposit' },
+    { icon: ArrowDownLeft, label: 'Withdraw' },
+    { icon: Lock, label: 'Keys' },
+    { icon: QrCode, label: 'Scan' }
   ]
+};
+
+const walletColors = {
+  spending: {
+    color: 'bg-purple-600',
+    accent: 'text-purple-500',
+    icon: '💳'
+  },
+  savings: {
+    color: 'bg-orange-600',
+    accent: 'text-orange-500',
+    icon: '🏦'
+  },
+  multisig: {
+    color: 'bg-blue-600',
+    accent: 'text-blue-500',
+    icon: '🔐'
+  }
 };
 
 interface HomeWidgetsProps {
@@ -64,31 +66,122 @@ interface HomeWidgetsProps {
 }
 
 export default function HomeWidgets({
-  selectedWalletId,
-  onWalletSelect,
+  selectedWalletId: externalSelectedWalletId,
+  onWalletSelect: externalOnWalletSelect,
 }: HomeWidgetsProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [ref, inView] = useInView({
-    threshold: 0.5,
-    triggerOnce: false
+  const { user } = useUser();
+  const {
+    accounts,
+    isLoading: accountsLoading,
+    selectedAccountId,
+    setSelectedAccountId,
+    isAccountSwitching,
+    selectedWalletId: internalSelectedWalletId,
+    setSelectedWalletId
+  } = useUserAccountsAndWallets(user?.id ?? "");
+
+  // Query wallets only when we have a selected account
+  const wallets = useQuery(api.wallets.getWallets, 
+    selectedAccountId ? { accountId: selectedAccountId } : "skip"
+  );
+
+  // Debug log for component state and data
+  useEffect(() => {
+    console.log('🏠 HomeWidgets Data:', {
+      accountId: selectedAccountId?.toString() || 'none',
+      accountType: accounts?.find(a => a._id === selectedAccountId)?.type || 'unknown',
+      walletsCount: wallets?.length || 0,
+      externalSelectedWalletId,
+      internalWalletId: internalSelectedWalletId,
+      isLoading: accountsLoading,
+      isAccountSwitching
+    });
+  }, [accounts, selectedAccountId, wallets, externalSelectedWalletId, internalSelectedWalletId, accountsLoading, isAccountSwitching]);
+
+  // Sync internal and external wallet selection
+  useEffect(() => {
+    if (internalSelectedWalletId && internalSelectedWalletId !== externalSelectedWalletId) {
+      console.log('🔄 Syncing wallet selection:', {
+        from: externalSelectedWalletId,
+        to: internalSelectedWalletId,
+        accountId: selectedAccountId?.toString() || 'none'
+      });
+      externalOnWalletSelect(internalSelectedWalletId);
+    }
+  }, [internalSelectedWalletId, externalSelectedWalletId, externalOnWalletSelect, selectedAccountId]);
+
+  // Handle wallet selection
+  const handleWalletSelect = useCallback((id: string) => {
+    if (id === internalSelectedWalletId) return;
+    
+    const selectedWallet = wallets?.find(w => w._id.toString() === id);
+    console.log('🎯 Wallet Selection:', {
+      current: internalSelectedWalletId,
+      new: id,
+      walletType: selectedWallet?.type || 'unknown',
+      accountId: selectedAccountId?.toString() || 'none'
+    });
+    
+    setSelectedWalletId(id);
+    externalOnWalletSelect(id);
+  }, [setSelectedWalletId, externalOnWalletSelect, internalSelectedWalletId, wallets, selectedAccountId]);
+
+  // Format wallets for UI components with proper memoization
+  const formattedWallets = React.useMemo(() => {
+    const formatted = wallets?.map(wallet => ({
+      id: wallet._id.toString(),
+      name: wallet.name,
+      icon: walletColors[wallet.type].icon,
+      color: walletColors[wallet.type].color.replace('bg-', '')
+    })) ?? [];
+    
+    console.log('💅 Formatted Wallets:', {
+      count: formatted.length,
+      wallets: formatted.map(w => ({ id: w.id, name: w.name })),
+      accountId: selectedAccountId?.toString() || 'none'
+    });
+    
+    return formatted;
+  }, [wallets, selectedAccountId]);
+
+  // Show loading states with proper conditions
+  const isLoading = accountsLoading || isAccountSwitching || (selectedAccountId && !wallets);
+  if (isLoading) {
+    console.log('⏳ Loading State:', {
+      accountsLoading,
+      isAccountSwitching,
+      hasSelectedAccount: !!selectedAccountId,
+      hasWallets: !!wallets,
+      accountId: selectedAccountId?.toString() || 'none'
+    });
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="w-6 h-6 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  const selectedAccount = accounts?.find(account => account._id === selectedAccountId);
+  if (!selectedAccount || !wallets) {
+    console.log('⚠️ Invalid State:', {
+      hasSelectedAccount: !!selectedAccount,
+      hasWallets: !!wallets,
+      selectedAccountId: selectedAccountId?.toString() || 'none',
+      accountType: selectedAccount?.type || 'unknown'
+    });
+    return null;
+  }
+
+  const currentWallet = wallets.find(w => w._id.toString() === internalSelectedWalletId);
+  console.log('🎯 Current Wallet:', {
+    walletId: currentWallet?._id.toString() || 'none',
+    type: currentWallet?.type || 'none',
+    name: currentWallet?.name || 'none',
+    accountId: selectedAccountId.toString(),
+    accountType: selectedAccount.type
   });
 
-  const currentWallet = wallets.find(w => w.id === selectedWalletId);
-  const currentActions = quickActions[selectedWalletId as keyof typeof quickActions] || [];
-
-  const loadMoreWidgets = () => {
-    setIsLoading(true);
-    // Simulate loading more widgets
-    setTimeout(() => {
-      setIsLoading(false);
-    }, 1000);
-  };
-
-  useEffect(() => {
-    if (inView && !isLoading) {
-      loadMoreWidgets();
-    }
-  }, [inView]);
+  const currentActions = currentWallet ? quickActions[currentWallet.type] : [];
 
   const handleActionClick = (actionId: string) => {
     // Handle action clicks here
@@ -107,10 +200,12 @@ export default function HomeWidgets({
         {/* Wallet Carousel */}
         <div className="px-4">
           <div className="pb-2 flex items-center justify-between">
-            <h2 className="text-sm text-zinc-400">Your Wallets</h2>
+            <h2 className="text-sm text-zinc-400">
+              {selectedAccount.type === 'personal' ? 'Personal' : 'Business'} Wallets
+            </h2>
             <button className="text-sm text-pink-500">See All</button>
           </div>
-          <Carousel 
+          <Carousel
             className="w-full"
             opts={{
               align: "start",
@@ -118,43 +213,45 @@ export default function HomeWidgets({
             }}
           >
             <CarouselContent className="-ml-4">
-              {wallets.map((wallet) => (
-                <CarouselItem key={wallet.id} className="pl-4 basis-[85%] md:basis-[85%]">
-                  <Card 
-                    className={`border-0 ${wallet.color} rounded-xl`}
-                    onClick={() => onWalletSelect(wallet.id)}
-                  >
-                    <CardContent className="p-6 h-48 relative">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <span className="text-xs text-white/80">{wallet.type}</span>
-                          <p className="font-medium text-white">{wallet.name}</p>
+              {wallets?.map((wallet) => {
+                const walletStyle = walletColors[wallet.type];
+                return (
+                  <CarouselItem key={wallet._id.toString()} className="pl-4 basis-[85%] md:basis-[85%]">
+                    <Card 
+                      className={`border-0 ${walletStyle.color} rounded-xl`}
+                      onClick={() => handleWalletSelect(wallet._id.toString())}
+                    >
+                      <CardContent className="p-6 h-48 relative">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="text-xs text-white/80">{wallet.type.charAt(0).toUpperCase() + wallet.type.slice(1)}</span>
+                            <p className="font-medium text-white">{wallet.name}</p>
+                          </div>
+                          <span className="text-2xl">{walletStyle.icon}</span>
                         </div>
-                        <span className="text-2xl">{wallet.icon}</span>
-                      </div>
-                      
-                      <div className="absolute bottom-6 left-6">
-                        <div className="space-y-1">
-                          <p className="text-2xl font-bold text-white">
-                            {wallet.balance} <span className="text-sm">sats</span>
-                          </p>
-                          <p className="text-sm text-white/80">${wallet.fiatBalance}</p>
+                        
+                        <div className="absolute bottom-6 left-6">
+                          <div className="space-y-1">
+                            <p className="text-2xl font-bold text-white">
+                              {formatCurrency(wallet.balance, wallet.currency)}
+                            </p>
+                            <p className="text-sm text-white/80">
+                              Last updated: {new Date(wallet.lastUpdated).toLocaleDateString()}
+                            </p>
+                          </div>
                         </div>
-                        {wallet.hasCard && (
-                          <p className="text-xs mt-2 text-white/80">Card •••• {wallet.cardNumber}</p>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </CarouselItem>
-              ))}
+                      </CardContent>
+                    </Card>
+                  </CarouselItem>
+                );
+              })}
             </CarouselContent>
             <div className="flex justify-center gap-2 mt-4">
-              {wallets.map((_, index) => (
+              {wallets?.map((_, index) => (
                 <div
                   key={index}
                   className={`h-1.5 rounded-full transition-all ${
-                    index === wallets.findIndex(w => w.id === selectedWalletId)
+                    index === wallets.findIndex(w => w._id.toString() === internalSelectedWalletId)
                       ? 'w-4 bg-white'
                       : 'w-1.5 bg-zinc-600'
                   }`}
@@ -165,16 +262,18 @@ export default function HomeWidgets({
         </div>
 
         {/* Quick Actions Grid */}
-        <div className="grid grid-cols-4 gap-4 px-4">
-          {currentActions.map((action, index) => (
-            <button key={index} className="flex flex-col items-center gap-2">
-              <div className="w-12 h-12 bg-zinc-900 rounded-full flex items-center justify-center">
-                <action.icon className={`h-5 w-5 ${currentWallet?.accent}`} />
-              </div>
-              <span className="text-xs">{action.label}</span>
-            </button>
-          ))}
-        </div>
+        {currentWallet && (
+          <div className="grid grid-cols-4 gap-4 px-4">
+            {currentActions.map((action, index) => (
+              <button key={index} className="flex flex-col items-center gap-2">
+                <div className="w-12 h-12 bg-zinc-900 rounded-full flex items-center justify-center">
+                  <action.icon className={`h-5 w-5 ${walletColors[currentWallet.type].accent}`} />
+                </div>
+                <span className="text-xs">{action.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Recent Activity Widget */}
@@ -185,9 +284,9 @@ export default function HomeWidgets({
       >
         <TransactionList
           transactions={mockTransactions}
-          wallets={wallets}
-          selectedWalletId={selectedWalletId}
-          onWalletSelect={onWalletSelect}
+          wallets={formattedWallets}
+          selectedWalletId={internalSelectedWalletId}
+          onWalletSelect={handleWalletSelect}
           onViewAll={() => {/* Handle view all */}}
         />
       </motion.div>
@@ -199,51 +298,22 @@ export default function HomeWidgets({
         className="px-4 py-4 bg-zinc-900 rounded-lg mx-4"
       >
         <SpendingTrendWidget
-          wallets={wallets}
-          selectedWalletId={selectedWalletId}
-          onWalletSelect={onWalletSelect}
+          wallets={formattedWallets}
+          selectedWalletId={internalSelectedWalletId}
+          onWalletSelect={handleWalletSelect}
         />
       </motion.div>
 
-      {/* BoltCards Active Widget */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="px-4 py-4 bg-zinc-900 rounded-lg mx-4"
-      >
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-medium">Active BoltCards</h3>
-          <span className="text-sm text-zinc-400">3 Cards</span>
-        </div>
-        <div className="space-y-3">
-          {[1, 2, 3].map((card) => (
-            <div key={card} className="p-4 bg-zinc-800 rounded-lg flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-purple-600 rounded-lg"></div>
-                <div>
-                  <p className="font-medium">Card {card}</p>
-                  <p className="text-sm text-zinc-500">Last used 2h ago</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p>Active</p>
-                <p className="text-sm text-zinc-500">Limit: 50k sats</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </motion.div>
-
-      {/* Loading indicator */}
-      <div ref={ref} className="flex justify-center py-4">
-        {isLoading && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="w-6 h-6 border-2 border-zinc-500 border-t-white rounded-full animate-spin"
-          />
-        )}
-      </div>
+      {/* Replace the old loading indicator with a simpler one */}
+      {accountsLoading && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex justify-center py-4"
+        >
+          <div className="w-6 h-6 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+        </motion.div>
+      )}
     </div>
   );
 } 

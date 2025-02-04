@@ -1,20 +1,15 @@
 import { X, Users, Settings, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from "framer-motion";
 import AccountSwitcher from "@/components/AccountSwitcher";
-import { Account } from "@/types/account";
 
 interface ProfileModalProps {
   onClose: () => void;
-  accounts: Account[];
-  onAccountSelect: (accountId: string) => void;
   showCreateAccount: boolean;
   setShowCreateAccount: (show: boolean) => void;
 }
 
 export function ProfileModal({
   onClose,
-  accounts,
-  onAccountSelect,
   showCreateAccount,
   setShowCreateAccount,
 }: ProfileModalProps) {
@@ -46,8 +41,6 @@ export function ProfileModal({
               exit={{ opacity: 0, x: 20 }}
             >
               <AccountSwitcher 
-                accounts={accounts}
-                onAccountSelect={onAccountSelect}
                 onCreateAccount={() => setShowCreateAccount(true)}
               />
 

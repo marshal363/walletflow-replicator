@@ -2,6 +2,28 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
+export const listAccounts = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("accounts").collect();
+  },
+});
+
+export const getAccountsByUser = query({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+    
+    return await ctx.db
+      .query("accounts")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+  },
+});
+
 export const importAccount = mutation({
   args: {
     userId: v.string(),
@@ -29,20 +51,5 @@ export const importAccount = mutation({
       status: args.status,
       businessDetails: args.businessDetails
     });
-  },
-});
-
-export const getAccountsByUser = query({
-  args: { userId: v.string() },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-    
-    return await ctx.db
-      .query("accounts")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .collect();
   },
 }); 
