@@ -331,4 +331,5 @@ export default defineSchema({
     dailyLimit: v.number(),
     lastUsed: v.string(),
   }).index("by_wallet", ["walletId"]),
+  
 }); 

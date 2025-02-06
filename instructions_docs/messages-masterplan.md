@@ -183,6 +183,121 @@ The Messages feature in BitBank revolutionizes Bitcoin transactions by seamlessl
 - Responsive interface
 - Reliable delivery
 
+### 9.3 State Management Challenges
+
+#### Account Switching Flow
+
+**Issue Description:**
+The wallet state management system experienced synchronization issues during account switching, specifically:
+
+- Wallet data not updating properly after account switches
+- Stale wallet data persisting in the HomeWidgets component
+- Race conditions between modal closing and state updates
+- Inconsistent state between AccountSwitcher and HomeWidgets components
+
+**Root Causes:**
+
+1. **Timing Issues**
+
+   - State updates occurring before account switch completion
+   - Modal closing event not properly synchronized with state changes
+   - Lack of proper cleanup for stale wallet data
+
+2. **Component Communication**
+   - Disconnected state management between AccountSwitcher and HomeWidgets
+   - No direct link between modal closing and wallet synchronization
+   - Missing event handling for account switch completion
+
+**Implementation Solution:**
+
+```typescript
+// State Management
+const [isAccountSwitching, setIsAccountSwitching] = useState(false);
+const pendingAccountRef = useRef<Id<"accounts"> | null>(null);
+const prevAccountIdRef = useRef<Id<"accounts"> | null>(null);
+
+// Event Handling
+useEffect(() => {
+  const handleModalClose = () => {
+    if (pendingAccountRef.current) {
+      // Process pending account change
+      setSelectedAccountId(pendingAccountRef.current);
+      setIsAccountSwitching(true);
+    }
+  };
+
+  document.addEventListener("modalclose", handleModalClose);
+  return () => document.removeEventListener("modalclose", handleModalClose);
+}, []);
+
+// Wallet Synchronization
+useEffect(() => {
+  if (selectedAccountId !== prevAccountIdRef.current) {
+    // Clear stale data
+    setSelectedWalletId(null);
+    // Trigger wallet refresh
+    setIsWalletLoading(true);
+    prevAccountIdRef.current = selectedAccountId;
+  }
+}, [selectedAccountId]);
+```
+
+**Key Improvements:**
+
+1. **Explicit State Tracking**
+
+   - Added isAccountSwitching flag
+   - Implemented pendingAccountRef for tracking changes
+   - Added proper state cleanup mechanisms
+
+2. **Event-Based Synchronization**
+
+   - Added modalclose event emission
+   - Implemented proper event handling
+   - Enhanced state synchronization flow
+
+3. **Enhanced Error Prevention**
+
+   - Added wallet validation checks
+   - Implemented proper loading states
+   - Added comprehensive logging
+
+4. **Performance Optimization**
+   - Reduced unnecessary re-renders
+   - Improved state update batching
+   - Enhanced data fetching efficiency
+
+**Logging Implementation:**
+
+```typescript
+console.log("🏠 HomeWidgets Data:", {
+  accountId: selectedAccountId?.toString() || "none",
+  accountType: selectedAccount?.type || "unknown",
+  walletsCount: wallets?.length || 0,
+  isLoading: accountsLoading,
+  isAccountSwitching,
+});
+```
+
+**Best Practices Established:**
+
+1. Always validate wallet belongs to current account
+2. Clear stale data during account switches
+3. Implement proper loading states
+4. Add comprehensive logging for debugging
+5. Handle race conditions explicitly
+6. Synchronize modal and state changes
+7. Maintain proper cleanup mechanisms
+
+**Future Considerations:**
+
+1. Implement optimistic updates for faster UI response
+2. Add retry mechanisms for failed state updates
+3. Enhance error recovery mechanisms
+4. Implement state persistence for better UX
+5. Add performance monitoring
+6. Enhance debugging capabilities
+
 ## 10. Success Metrics
 
 ### 10.1 Usage Metrics
@@ -272,3 +387,21 @@ Would you like me to:
 
 PRF
 Features:
+
+fix(account-switching): ensure wallet data syncs after account changes
+
+- Add force refresh mechanism to handle account switches
+- Clear stale wallet data when account changes
+- Validate wallet belongs to current account
+- Add comprehensive logging for debugging
+- Fix issue where HomeWidgets showed incorrect wallet after modal close
+
+Changes:
+
+- Add forceRefreshRef to trigger re-renders
+- Improve wallet validation and synchronization
+- Add proper cleanup of stale data
+- Enhance logging for better debugging
+- Fix race conditions in data loading
+
+Resolves: Issue with wallet data not updating after account switch

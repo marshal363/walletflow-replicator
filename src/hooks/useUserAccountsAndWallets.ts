@@ -3,6 +3,7 @@ import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { Doc } from "../../convex/_generated/dataModel";
+import { useAuth } from "@clerk/clerk-react";
 
 interface UserAccountsAndWallets {
   accounts: {
@@ -21,7 +22,8 @@ interface UserAccountsAndWallets {
   setSelectedWalletId: (id: string | null) => void;
 }
 
-export function useUserAccountsAndWallets(userId: string): UserAccountsAndWallets {
+export function useUserAccountsAndWallets(): UserAccountsAndWallets {
+  const { userId } = useAuth();
   // State for selected account and wallet
   const [selectedAccountId, setSelectedAccountId] = useState<Id<"accounts"> | null>(null);
   const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
@@ -36,8 +38,10 @@ export function useUserAccountsAndWallets(userId: string): UserAccountsAndWallet
   const isInitialMount = useRef(true);
   const lastSelectedAccountRef = useRef<Id<"accounts"> | null>(null);
 
-  // Fetch accounts for the user
-  const accounts = useQuery(api.accounts.getAccountsByUser, { userId });
+  // Fetch accounts for the user using clerkId
+  const accounts = useQuery(api.accounts.getAccountsByUser, 
+    userId ? { clerkId: userId } : "skip"
+  );
   
   // Fetch wallets for the selected account
   const wallets = useQuery(api.wallets.getWallets, 

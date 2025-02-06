@@ -170,4 +170,42 @@ export const getWalletsByAccounts = query({
       )
       .collect();
   },
+});
+
+export const importWallet = mutation({
+  args: {
+    accountId: v.id("accounts"), // Using Convex account ID
+    type: v.union(v.literal("spending"), v.literal("savings"), v.literal("multisig")),
+    name: v.string(),
+    balance: v.number(),
+    currency: v.string(),
+    lastUpdated: v.string(),
+    networkIdentities: v.union(
+      v.object({
+        type: v.literal("spending"),
+        lightning: v.string(),
+        nostr: v.string(),
+      }),
+      v.object({
+        type: v.literal("savings"),
+        bitcoinAddress: v.string(),
+        derivationPath: v.string(),
+      }),
+      v.object({
+        type: v.literal("multisig"),
+        addresses: v.array(v.object({
+          address: v.string(),
+          signers: v.array(v.object({
+            pubKey: v.string(),
+            weight: v.number(),
+          })),
+          requiredSignatures: v.number(),
+        })),
+        scriptType: v.union(v.literal("p2sh"), v.literal("p2wsh"), v.literal("p2tr")),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("wallets", args);
+  },
 }); 

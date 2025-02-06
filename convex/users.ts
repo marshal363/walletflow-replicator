@@ -219,4 +219,43 @@ export const migrateExistingUsers = mutation({
       userIds: results,
     };
   },
+});
+
+export const importUser = mutation({
+  args: {
+    clerkId: v.string(),
+    email: v.string(),
+    username: v.string(),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+    fullName: v.string(),
+    profileImageUrl: v.optional(v.string()),
+    createdAt: v.string(),
+    lastSignInAt: v.optional(v.string()),
+    updatedAt: v.string(),
+    preferences: v.object({
+      defaultCurrency: v.string(),
+      notifications: v.boolean(),
+      twoFactorEnabled: v.boolean(),
+      theme: v.union(v.literal("light"), v.literal("dark"), v.literal("system")),
+      language: v.string(),
+    }),
+    status: v.union(v.literal("active"), v.literal("inactive"), v.literal("suspended"))
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("users", args);
+  },
+});
+
+// Helper query to get user mappings
+export const getUserMappings = query({
+  args: {},
+  handler: async (ctx) => {
+    const users = await ctx.db.query("users").collect();
+    return users.map(user => ({
+      clerkId: user.clerkId,
+      convexId: user._id,
+      username: user.username
+    }));
+  },
 }); 

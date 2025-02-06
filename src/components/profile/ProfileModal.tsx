@@ -1,6 +1,7 @@
 import { X, Users, Settings, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from "framer-motion";
 import AccountSwitcher from "@/components/AccountSwitcher";
+import { useUserAccountsAndWallets } from "@/hooks/useUserAccountsAndWallets";
 
 interface ProfileModalProps {
   onClose: () => void;
@@ -13,6 +14,8 @@ export function ProfileModal({
   showCreateAccount,
   setShowCreateAccount,
 }: ProfileModalProps) {
+  const { accounts, isLoading } = useUserAccountsAndWallets();
+
   return (
     <div className="fixed inset-0 bg-black/95 z-50">
       <motion.div 
@@ -40,43 +43,51 @@ export function ProfileModal({
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
             >
-              <AccountSwitcher 
-                onCreateAccount={() => setShowCreateAccount(true)}
-              />
+              {isLoading ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                </div>
+              ) : (
+                <>
+                  <AccountSwitcher 
+                    onCreateAccount={() => setShowCreateAccount(true)}
+                  />
 
-              <div className="mt-6 space-y-4">
-                <button 
-                  className="w-full p-4 rounded-lg bg-zinc-900 text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
-                      <Users className="h-5 w-5" />
-                    </div>
-                    <span>Invite friends</span>
-                  </div>
-                </button>
+                  <div className="mt-6 space-y-4">
+                    <button 
+                      className="w-full p-4 rounded-lg bg-zinc-900 text-left"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
+                          <Users className="h-5 w-5" />
+                        </div>
+                        <span>Invite friends</span>
+                      </div>
+                    </button>
 
-                <button className="w-full p-4 rounded-lg bg-zinc-900 text-left">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
-                      <Settings className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1">
-                      <p>Account</p>
-                      <p className="text-sm text-red-500">Submit missing info</p>
-                    </div>
-                  </div>
-                </button>
+                    <button className="w-full p-4 rounded-lg bg-zinc-900 text-left">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
+                          <Settings className="h-5 w-5" />
+                        </div>
+                        <div className="flex-1">
+                          <p>Account</p>
+                          <p className="text-sm text-red-500">Submit missing info</p>
+                        </div>
+                      </div>
+                    </button>
 
-                <button className="w-full p-4 rounded-lg bg-zinc-900 text-left">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
-                      <MessageSquare className="h-5 w-5" />
-                    </div>
-                    <span>Documents & statements</span>
+                    <button className="w-full p-4 rounded-lg bg-zinc-900 text-left">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
+                          <MessageSquare className="h-5 w-5" />
+                        </div>
+                        <span>Documents & statements</span>
+                      </div>
+                    </button>
                   </div>
-                </button>
-              </div>
+                </>
+              )}
             </motion.div>
           ) : (
             <CreateAccountForm />

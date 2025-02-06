@@ -2,27 +2,54 @@ import React from 'react';
 import { Check, Plus, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { useUserAccountsAndWallets } from "../hooks/useUserAccountsAndWallets";
-import { useUser } from "@clerk/clerk-react";
 import { Id } from "../../convex/_generated/dataModel";
 
 interface Account {
   _id: Id<"accounts">;
+  userId: Id<"users">;
   type: "personal" | "business";
   name: string;
   status: "active" | "inactive" | "suspended";
   identitySettings?: {
     username: string;
+    domain: string;
+    customDomain?: string;
+    prefix?: string;
+    suffix?: string;
   };
   businessDetails?: {
     companyName: string;
+    registrationNumber: string;
+    type: string;
   };
   wallets: {
     _id: Id<"wallets">;
+    accountId: Id<"accounts">;
     type: "spending" | "savings" | "multisig";
     name: string;
     balance: number;
     currency: string;
     lastUpdated: string;
+    networkIdentities: {
+      type: "spending";
+      lightning: string;
+      nostr: string;
+    } | {
+      type: "savings";
+      bitcoinAddress: string;
+      derivationPath: string;
+    } | {
+      type: "multisig";
+      addresses: {
+        address: string;
+        signers: {
+          pubKey: string;
+          weight: number;
+        }[];
+        requiredSignatures: number;
+      }[];
+      scriptType: "p2sh" | "p2wsh" | "p2tr";
+    };
   }[];
 }
 
@@ -44,14 +71,13 @@ interface AccountSwitcherProps {
 }
 
 function AccountSwitcher({ onCreateAccount }: AccountSwitcherProps) {
-  const { user } = useUser();
   const {
     accounts,
     isLoading,
     error,
     selectedAccountId,
     setSelectedAccountId,
-  } = useUserAccountsAndWallets(user?.id ?? "");
+  } = useUserAccountsAndWallets();
 
   if (isLoading) {
     return <div>Loading accounts...</div>;
@@ -103,14 +129,6 @@ function AccountSwitcher({ onCreateAccount }: AccountSwitcherProps) {
                 >
                   {account.name}
                 </motion.h2>
-                {account.identitySettings && (
-                  <motion.p 
-                    className="text-zinc-400"
-                    layoutId={`username-${account._id}`}
-                  >
-                    @{account.identitySettings.username}
-                  </motion.p>
-                )}
               </motion.div>
             )}
 
@@ -167,14 +185,6 @@ function AccountSwitcher({ onCreateAccount }: AccountSwitcherProps) {
                     >
                       {account.type === 'personal' ? 'Personal' : 'Business'}
                     </motion.span>
-                    {account.businessDetails && (
-                      <motion.span
-                        className="text-sm text-zinc-400"
-                        layout
-                      >
-                        {account.businessDetails.companyName}
-                      </motion.span>
-                    )}
                   </div>
                 </div>
               </div>
