@@ -11,6 +11,13 @@ interface UserAccountsAndWallets {
     type: "personal" | "business";
     name: string;
     status: "active" | "inactive" | "suspended";
+    identitySettings?: {
+      username: string;
+      domain: string;
+      customDomain?: string;
+      prefix?: string;
+      suffix?: string;
+    };
     wallets: Doc<"wallets">[];
   }[];
   isLoading: boolean;

@@ -68,9 +68,10 @@ function formatCurrency(amount: number, currency: string): string {
 
 interface AccountSwitcherProps {
   onCreateAccount?: () => void;
+  hideProfileInfo?: boolean;
 }
 
-function AccountSwitcher({ onCreateAccount }: AccountSwitcherProps) {
+function AccountSwitcher({ onCreateAccount, hideProfileInfo = false }: AccountSwitcherProps) {
   const {
     accounts,
     isLoading,
@@ -111,19 +112,19 @@ function AccountSwitcher({ onCreateAccount }: AccountSwitcherProps) {
             className="relative"
             initial={false}
           >
-            {index === 0 && (
+            {index === 0 && !hideProfileInfo && (
               <motion.div
                 layout
                 className="flex flex-col items-center mb-6"
                 initial={false}
               >
-                <motion.div 
+                <motion.div
                   className="w-20 h-20 bg-orange-500 rounded-full flex items-center justify-center text-2xl mb-2"
                   layoutId={`avatar-${account._id}`}
                 >
                   {account.name.split(' ').map(n => n[0]).join('')}
                 </motion.div>
-                <motion.h2 
+                <motion.h2
                   className="text-2xl font-bold text-center"
                   layoutId={`name-${account._id}`}
                 >
@@ -135,9 +136,8 @@ function AccountSwitcher({ onCreateAccount }: AccountSwitcherProps) {
             <motion.button
               layout
               onClick={() => handleAccountChange(account._id.toString())}
-              className={`w-full p-4 rounded-lg ${
-                account._id === selectedAccountId ? 'bg-purple-600' : 'bg-zinc-800'
-              } relative overflow-hidden group`}
+              className={`w-full p-4 rounded-lg ${account._id === selectedAccountId ? 'bg-purple-600' : 'bg-zinc-800'
+                } relative overflow-hidden group`}
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               transition={{
@@ -158,7 +158,7 @@ function AccountSwitcher({ onCreateAccount }: AccountSwitcherProps) {
                 }}
                 style={{ originX: 0 }}
               />
-              
+
               <div className="flex items-center justify-between relative z-10">
                 <div className="flex items-center gap-2">
                   <motion.div
@@ -179,7 +179,7 @@ function AccountSwitcher({ onCreateAccount }: AccountSwitcherProps) {
                     )}
                   </motion.div>
                   <div className="flex flex-col">
-                    <motion.span 
+                    <motion.span
                       className="font-medium"
                       layout
                     >

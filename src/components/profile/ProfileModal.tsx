@@ -2,6 +2,8 @@ import { X, Users, Settings, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from "framer-motion";
 import AccountSwitcher from "@/components/AccountSwitcher";
 import { useUserAccountsAndWallets } from "@/hooks/useUserAccountsAndWallets";
+import { useEffect, useRef, useState } from 'react';
+import { Id } from "../../convex/_generated/dataModel";
 
 interface ProfileModalProps {
   onClose: () => void;
@@ -14,7 +16,124 @@ export function ProfileModal({
   showCreateAccount,
   setShowCreateAccount,
 }: ProfileModalProps) {
-  const { accounts, isLoading } = useUserAccountsAndWallets();
+  const { 
+    accounts, 
+    isLoading, 
+    selectedAccountId, 
+    setSelectedAccountId,
+    isAccountSwitching 
+  } = useUserAccountsAndWallets();
+
+  // State for UI updates
+  const [displayUsername, setDisplayUsername] = useState<string>('username');
+  const [displayInitials, setDisplayInitials] = useState<string>('');
+  const [shouldClose, setShouldClose] = useState(false);
+  const previousAccountIdRef = useRef<string | null>(null);
+
+  // Effect to update display info when accounts or selectedAccountId changes
+  useEffect(() => {
+    if (!accounts || !selectedAccountId) return;
+
+    const selectedAccount = accounts.find(account => account._id === selectedAccountId);
+    if (!selectedAccount) return;
+
+    const username = selectedAccount.identitySettings?.username || 'username';
+    setDisplayUsername(username);
+    setDisplayInitials(username.slice(0, 2).toUpperCase());
+
+    console.log('👤 Profile Info Updated:', {
+      id: selectedAccountId.toString(),
+      username,
+      initials: username.slice(0, 2).toUpperCase(),
+      previousAccount: previousAccountIdRef.current
+    });
+
+    // Handle account switching
+    if (previousAccountIdRef.current && 
+        previousAccountIdRef.current !== selectedAccountId.toString()) {
+      console.log('🔄 Account Switch Detected:', {
+        from: previousAccountIdRef.current,
+        to: selectedAccountId.toString()
+      });
+      setShouldClose(true);
+    }
+
+    previousAccountIdRef.current = selectedAccountId.toString();
+  }, [accounts, selectedAccountId]);
+
+  // Handle modal closure after account switch
+  useEffect(() => {
+    if (shouldClose) {
+      onClose();
+      setShouldClose(false);
+    }
+  }, [shouldClose, onClose]);
+
+  // Log mount/unmount
+  useEffect(() => {
+    console.log('🎭 ProfileModal Mounted:', {
+      showCreateAccount,
+      hasAccounts: !!accounts?.length,
+      selectedAccountId: selectedAccountId?.toString() || 'none',
+      isLoading,
+      isAccountSwitching
+    });
+
+    return () => {
+      console.log('🎭 ProfileModal Unmounted');
+    };
+  }, []);
+
+  // Get current account info
+  const selectedAccount = accounts?.find(account => account._id === selectedAccountId);
+
+  // Log selected account changes
+  useEffect(() => {
+    if (selectedAccount) {
+      console.log('👤 Selected Account Updated:', {
+        id: selectedAccount._id.toString(),
+        name: selectedAccount.name,
+        username: selectedAccount.identitySettings?.username,
+        type: selectedAccount.type,
+        walletsCount: selectedAccount.wallets.length
+      });
+      
+      // Update username when account changes
+      if (selectedAccount.identitySettings?.username) {
+        setDisplayUsername(selectedAccount.identitySettings.username);
+      }
+    }
+  }, [selectedAccount]);
+
+  const handleCloseClick = () => {
+    console.log('❌ Close Button Clicked');
+    onClose();
+  };
+
+  const handleUpgradeClick = () => {
+    console.log('⭐ Upgrade Button Clicked');
+    // Add upgrade logic here
+  };
+
+  const handleCreateAccountClick = () => {
+    console.log('➕ Create Account Button Clicked');
+    setShowCreateAccount(true);
+  };
+
+  const handleInviteFriendsClick = () => {
+    console.log('👥 Invite Friends Button Clicked');
+    // Add invite friends logic here
+  };
+
+  const handleAccountSettingsClick = () => {
+    console.log('⚙️ Account Settings Button Clicked');
+    // Add account settings logic here
+  };
+
+  const handleDocumentsClick = () => {
+    console.log('📄 Documents Button Clicked');
+    // Add documents logic here
+  };
 
   return (
     <div className="fixed inset-0 bg-black/95 z-50">
@@ -27,9 +146,12 @@ export function ProfileModal({
         <div className="flex justify-between items-center p-4">
           <X
             className="h-6 w-6 cursor-pointer"
-            onClick={onClose}
+            onClick={handleCloseClick}
           />
-          <button className="px-4 py-1.5 rounded-full bg-white/10 text-sm">
+          <button 
+            className="px-4 py-1.5 rounded-full bg-white/10 text-sm"
+            onClick={handleUpgradeClick}
+          >
             Upgrade
           </button>
         </div>
@@ -49,13 +171,54 @@ export function ProfileModal({
                 </div>
               ) : (
                 <>
+                  {/* QR Code with User Info */}
+                  <motion.div 
+                    key={`profile-${selectedAccountId}`}
+                    className="flex flex-col items-center mb-8"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <div className="relative w-48 h-48 mb-4">
+                      {/* QR Code Background */}
+                      <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-lg p-4">
+                        <div className="w-full h-full border-2 border-purple-500/30 rounded-lg"></div>
+                      </div>
+                      {/* Center User Photo */}
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <motion.div 
+                          key={`avatar-${displayUsername}`}
+                          className="w-16 h-16 bg-purple-500 rounded-full flex items-center justify-center text-xl"
+                          initial={{ scale: 0.8 }}
+                          animate={{ scale: 1 }}
+                          transition={{ type: "spring", bounce: 0.5 }}
+                        >
+                          {displayInitials}
+                        </motion.div>
+                      </div>
+                    </div>
+                    {/* Username Display */}
+                    <motion.h2 
+                      key={`username-${displayUsername}`}
+                      className="text-2xl font-bold mb-1"
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 }}
+                    >
+                      @{displayUsername}
+                    </motion.h2>
+                    <p className="text-zinc-400 text-sm mb-6">Scan to add as contact</p>
+                  </motion.div>
+
                   <AccountSwitcher 
-                    onCreateAccount={() => setShowCreateAccount(true)}
+                    onCreateAccount={handleCreateAccountClick}
+                    hideProfileInfo={true}
                   />
 
                   <div className="mt-6 space-y-4">
                     <button 
                       className="w-full p-4 rounded-lg bg-zinc-900 text-left"
+                      onClick={handleInviteFriendsClick}
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
@@ -65,7 +228,10 @@ export function ProfileModal({
                       </div>
                     </button>
 
-                    <button className="w-full p-4 rounded-lg bg-zinc-900 text-left">
+                    <button 
+                      className="w-full p-4 rounded-lg bg-zinc-900 text-left"
+                      onClick={handleAccountSettingsClick}
+                    >
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
                           <Settings className="h-5 w-5" />
@@ -77,7 +243,10 @@ export function ProfileModal({
                       </div>
                     </button>
 
-                    <button className="w-full p-4 rounded-lg bg-zinc-900 text-left">
+                    <button 
+                      className="w-full p-4 rounded-lg bg-zinc-900 text-left"
+                      onClick={handleDocumentsClick}
+                    >
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
                           <MessageSquare className="h-5 w-5" />
@@ -99,6 +268,29 @@ export function ProfileModal({
 }
 
 function CreateAccountForm() {
+  useEffect(() => {
+    console.log('📝 CreateAccountForm Mounted');
+    return () => {
+      console.log('📝 CreateAccountForm Unmounted');
+    };
+  }, []);
+
+  const handleAccountTypeSelect = (type: string) => {
+    console.log('📋 Account Type Selected:', { type });
+  };
+
+  const handleNameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('✏️ Account Name Changed:', {
+      value: event.target.value
+    });
+  };
+
+  const handleUsernameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('✏️ Username Changed:', {
+      value: event.target.value
+    });
+  };
+
   return (
     <motion.div
       key="create-account"
@@ -116,6 +308,7 @@ function CreateAccountForm() {
               <button
                 key={type}
                 className="p-4 rounded-lg bg-zinc-800 hover:bg-zinc-700 transition-colors"
+                onClick={() => handleAccountTypeSelect(type)}
               >
                 {type}
               </button>
@@ -129,6 +322,7 @@ function CreateAccountForm() {
             type="text"
             className="w-full p-3 rounded-lg bg-zinc-800 outline-none"
             placeholder="Enter account name"
+            onChange={handleNameChange}
           />
         </div>
 
@@ -138,6 +332,7 @@ function CreateAccountForm() {
             type="text"
             className="w-full p-3 rounded-lg bg-zinc-800 outline-none"
             placeholder="@username"
+            onChange={handleUsernameChange}
           />
         </div>
       </div>
