@@ -10,7 +10,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useUser } from "@clerk/clerk-react";
 import { Id } from "../../../convex/_generated/dataModel";
-import { useUserAccountsAndWallets } from "../../hooks/useUserAccountsAndWallets";
+import { useUserAccountsAndWallets, useAccountStore } from "../../hooks/useUserAccountsAndWallets";
 import { formatCurrency } from "@/lib/utils";
 
 // Mock data - Replace with real data later
@@ -70,6 +70,13 @@ export default function HomeWidgets({
   onWalletSelect: externalOnWalletSelect,
 }: HomeWidgetsProps) {
   const { user } = useUser();
+  
+  // Connect to global state
+  const { 
+    currentAccountId,
+    isAccountSwitching: globalIsAccountSwitching
+  } = useAccountStore();
+
   const {
     accounts,
     isLoading: accountsLoading,
@@ -78,53 +85,72 @@ export default function HomeWidgets({
     isAccountSwitching,
     selectedWalletId: internalSelectedWalletId,
     setSelectedWalletId
-  } = useUserAccountsAndWallets(user?.id ?? "");
+  } = useUserAccountsAndWallets();
+
+  // Track state synchronization
+  useEffect(() => {
+    console.log('🏠 HomeWidgets Sync:', {
+      event: 'State Comparison',
+      globalAccountId: currentAccountId?.toString() || 'none',
+      localAccountId: selectedAccountId?.toString() || 'none',
+      globalSwitching: globalIsAccountSwitching,
+      localSwitching: isAccountSwitching,
+      timestamp: new Date().toISOString()
+    });
+  }, [currentAccountId, selectedAccountId, globalIsAccountSwitching, isAccountSwitching]);
 
   // Query wallets only when we have a selected account
   const wallets = useQuery(api.wallets.getWallets, 
-    selectedAccountId ? { accountId: selectedAccountId } : "skip"
+    currentAccountId ? { accountId: currentAccountId } : "skip"
   );
 
   // Debug log for component state and data
   useEffect(() => {
     console.log('🏠 HomeWidgets Data:', {
-      accountId: selectedAccountId?.toString() || 'none',
-      accountType: accounts?.find(a => a._id === selectedAccountId)?.type || 'unknown',
+      event: 'Data Update',
+      globalAccountId: currentAccountId?.toString() || 'none',
+      localAccountId: selectedAccountId?.toString() || 'none',
+      accountType: accounts?.find(a => a._id === currentAccountId)?.type || 'unknown',
       walletsCount: wallets?.length || 0,
       externalSelectedWalletId,
       internalWalletId: internalSelectedWalletId,
       isLoading: accountsLoading,
-      isAccountSwitching
+      isAccountSwitching: globalIsAccountSwitching,
+      timestamp: new Date().toISOString()
     });
-  }, [accounts, selectedAccountId, wallets, externalSelectedWalletId, internalSelectedWalletId, accountsLoading, isAccountSwitching]);
+  }, [accounts, currentAccountId, selectedAccountId, wallets, externalSelectedWalletId, internalSelectedWalletId, accountsLoading, globalIsAccountSwitching]);
 
   // Sync internal and external wallet selection
   useEffect(() => {
     if (internalSelectedWalletId && internalSelectedWalletId !== externalSelectedWalletId) {
-      console.log('🔄 Syncing wallet selection:', {
+      console.log('🔄 HomeWidgets Sync:', {
+        event: 'Wallet Selection Sync',
         from: externalSelectedWalletId,
         to: internalSelectedWalletId,
-        accountId: selectedAccountId?.toString() || 'none'
+        accountId: currentAccountId?.toString() || 'none',
+        timestamp: new Date().toISOString()
       });
       externalOnWalletSelect(internalSelectedWalletId);
     }
-  }, [internalSelectedWalletId, externalSelectedWalletId, externalOnWalletSelect, selectedAccountId]);
+  }, [internalSelectedWalletId, externalSelectedWalletId, externalOnWalletSelect, currentAccountId]);
 
   // Handle wallet selection
   const handleWalletSelect = useCallback((id: string) => {
     if (id === internalSelectedWalletId) return;
     
     const selectedWallet = wallets?.find(w => w._id.toString() === id);
-    console.log('🎯 Wallet Selection:', {
+    console.log('🎯 HomeWidgets Selection:', {
+      event: 'Wallet Selection',
       current: internalSelectedWalletId,
       new: id,
       walletType: selectedWallet?.type || 'unknown',
-      accountId: selectedAccountId?.toString() || 'none'
+      accountId: currentAccountId?.toString() || 'none',
+      timestamp: new Date().toISOString()
     });
     
     setSelectedWalletId(id);
     externalOnWalletSelect(id);
-  }, [setSelectedWalletId, externalOnWalletSelect, internalSelectedWalletId, wallets, selectedAccountId]);
+  }, [setSelectedWalletId, externalOnWalletSelect, internalSelectedWalletId, wallets, currentAccountId]);
 
   // Format wallets for UI components with proper memoization
   const formattedWallets = React.useMemo(() => {
@@ -135,24 +161,31 @@ export default function HomeWidgets({
       color: walletColors[wallet.type].color.replace('bg-', '')
     })) ?? [];
     
-    console.log('💅 Formatted Wallets:', {
+    console.log('💅 HomeWidgets Format:', {
+      event: 'Wallet Formatting',
       count: formatted.length,
       wallets: formatted.map(w => ({ id: w.id, name: w.name })),
-      accountId: selectedAccountId?.toString() || 'none'
+      accountId: currentAccountId?.toString() || 'none',
+      timestamp: new Date().toISOString()
     });
     
     return formatted;
-  }, [wallets, selectedAccountId]);
+  }, [wallets, currentAccountId]);
 
   // Show loading states with proper conditions
-  const isLoading = accountsLoading || isAccountSwitching || (selectedAccountId && !wallets);
+  const isLoading = accountsLoading || 
+    (globalIsAccountSwitching && !wallets) || // Only show loading if switching AND no wallets
+    (currentAccountId && !wallets && !accountsLoading); // Show loading when waiting for wallets
+
   if (isLoading) {
-    console.log('⏳ Loading State:', {
+    console.log('⏳ HomeWidgets Loading:', {
+      event: 'Loading State',
       accountsLoading,
-      isAccountSwitching,
-      hasSelectedAccount: !!selectedAccountId,
+      globalSwitching: globalIsAccountSwitching,
+      hasSelectedAccount: !!currentAccountId,
       hasWallets: !!wallets,
-      accountId: selectedAccountId?.toString() || 'none'
+      accountId: currentAccountId?.toString() || 'none',
+      timestamp: new Date().toISOString()
     });
     return (
       <div className="flex justify-center items-center h-64">
@@ -161,13 +194,26 @@ export default function HomeWidgets({
     );
   }
 
+  // Add early return for missing account/wallets with proper logging
+  if (!accounts?.length) {
+    console.log('⚠️ HomeWidgets State:', {
+      event: 'No Accounts',
+      accountsLoading,
+      globalSwitching: globalIsAccountSwitching,
+      timestamp: new Date().toISOString()
+    });
+    return null;
+  }
+
   const selectedAccount = accounts?.find(account => account._id === selectedAccountId);
   if (!selectedAccount || !wallets) {
-    console.log('⚠️ Invalid State:', {
+    console.log('⚠️ HomeWidgets State:', {
+      event: 'Invalid State',
       hasSelectedAccount: !!selectedAccount,
       hasWallets: !!wallets,
       selectedAccountId: selectedAccountId?.toString() || 'none',
-      accountType: selectedAccount?.type || 'unknown'
+      accountType: selectedAccount?.type || 'unknown',
+      timestamp: new Date().toISOString()
     });
     return null;
   }

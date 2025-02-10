@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Check, Plus, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { useUserAccountsAndWallets } from "../hooks/useUserAccountsAndWallets";
@@ -80,19 +80,101 @@ function AccountSwitcher({ onCreateAccount, hideProfileInfo = false }: AccountSw
     setSelectedAccountId,
   } = useUserAccountsAndWallets();
 
+  // Track account switch timing
+  const switchStartTimeRef = useRef<number | null>(null);
+  const previousSelectionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    console.log('🔀 AccountSwitcher Mount:', {
+      event: 'Component Mount',
+      hasAccounts: !!accounts?.length,
+      selectedAccountId: selectedAccountId?.toString() || 'none',
+      isLoading,
+      timestamp: new Date().toISOString()
+    });
+
+    return () => {
+      console.log('🔀 AccountSwitcher Unmount:', {
+        event: 'Component Unmount',
+        finalAccountId: selectedAccountId?.toString() || 'none',
+        switchInProgress: !!switchStartTimeRef.current,
+        timestamp: new Date().toISOString()
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selectedAccountId) {
+      const currentId = selectedAccountId.toString();
+      const prevId = previousSelectionRef.current;
+
+      if (prevId && prevId !== currentId) {
+        const switchDuration = switchStartTimeRef.current ? 
+          Date.now() - switchStartTimeRef.current : 
+          null;
+
+        console.log('🔀 AccountSwitcher State:', {
+          event: 'Switch Complete',
+          from: prevId,
+          to: currentId,
+          duration: switchDuration,
+          timestamp: new Date().toISOString()
+        });
+
+        // Reset switch timing
+        switchStartTimeRef.current = null;
+      }
+
+      previousSelectionRef.current = currentId;
+    }
+  }, [selectedAccountId]);
+
+  const selectedAccount = accounts?.find(
+    (account) => account._id === selectedAccountId
+  );
+
+  // Log current account state
+  useEffect(() => {
+    if (selectedAccount) {
+      console.log('🔀 AccountSwitcher State:', {
+        event: 'Current Account',
+        id: selectedAccount._id.toString(),
+        type: selectedAccount.type,
+        walletsCount: selectedAccount.wallets?.length || 0,
+        hasIdentity: !!selectedAccount.identitySettings,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, [selectedAccount]);
+
   if (isLoading) {
+    console.log('🔀 AccountSwitcher State:', {
+      event: 'Loading',
+      timestamp: new Date().toISOString()
+    });
     return <div>Loading accounts...</div>;
   }
 
   if (error) {
+    console.log('🔀 AccountSwitcher Error:', {
+      event: 'Error State',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
     return <div>Error: {error.message}</div>;
   }
 
-  const selectedAccount = accounts.find(
-    (account) => account._id === selectedAccountId
-  );
-
   const handleAccountChange = (value: string) => {
+    // Start timing the switch
+    switchStartTimeRef.current = Date.now();
+
+    console.log('🔀 AccountSwitcher Action:', {
+      event: 'Switch Initiated',
+      from: selectedAccountId?.toString() || 'none',
+      to: value,
+      timestamp: new Date().toISOString()
+    });
+
     setSelectedAccountId(value as Id<"accounts">);
   };
 

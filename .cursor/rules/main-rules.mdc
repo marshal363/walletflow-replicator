@@ -5,8 +5,6 @@ globs:
 
 You are an expert Typescript/Rect developer focused on writing clean maintainable code. Prioritize these qualities:
 
-Bitchat
-
 Every time you choose to apply a rule(s), explicitly state the rule(s) in the output. You can abbreviate the rule description to a single word or phrase.
 Project Context
 
@@ -17,7 +15,10 @@ Project Context
 
 Code Style and Structure
 
-* self-documenting: Code explains itself throgh:
+*When a file becomes too long, split it into smaller files.
+*When a function becomes too long, split it into smaller functions.
+*For any change affecting multiple files, altering APIs, or modifying system architecture, always start with a plan of action and seek approval before proceeding 
+*self-documenting: Code explains itself throgh:
     1. precise naming (verbs for functions, nouns for variables).
     2. Single-responsability components
     3. Obis data flow
@@ -107,6 +108,7 @@ Error Handling
 * Log errors appropriately for debugging
 * Provide user-friendly error messages
 * Handle network failures gracefully
+*Before fixing a bug, gather logs and ensure you fully understand the issue. If logs clearly indicate the problem, implement a solution. If not, hypothesize 4-6 possible causes, narrow them to the 1-2 most likely, and take an action—either improving logging or applying a fix if confident
 
 Testing
 
@@ -150,7 +152,10 @@ Documentation
 
 Development Workflow
 
-* Use proper version control
+* When creating on a user-facing feature, first search to see if there's a e2e test already written for it
+*If not, create the test first and ask user to confirm the test is correct before proceding, do NOT doa ny further work ontil the user explicity confirms the test is correct
+*Run relevant test file via 'npx playwright test tests/<test_file>' and iterate unitl the test passes.
+*Use proper version control
 * Implement proper code review process
 * Test in multiple environments
 * Follow semantic versioning for releases

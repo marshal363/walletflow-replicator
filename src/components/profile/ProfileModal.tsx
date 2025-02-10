@@ -27,83 +27,86 @@ export function ProfileModal({
   // State for UI updates
   const [displayUsername, setDisplayUsername] = useState<string>('username');
   const [displayInitials, setDisplayInitials] = useState<string>('');
-  const [shouldClose, setShouldClose] = useState(false);
   const previousAccountIdRef = useRef<string | null>(null);
+  const mountTimeRef = useRef<number>(Date.now());
 
-  // Effect to update display info when accounts or selectedAccountId changes
+  // Log component lifecycle and state changes
   useEffect(() => {
-    if (!accounts || !selectedAccountId) return;
-
-    const selectedAccount = accounts.find(account => account._id === selectedAccountId);
-    if (!selectedAccount) return;
-
-    const username = selectedAccount.identitySettings?.username || 'username';
-    setDisplayUsername(username);
-    setDisplayInitials(username.slice(0, 2).toUpperCase());
-
-    console.log('👤 Profile Info Updated:', {
-      id: selectedAccountId.toString(),
-      username,
-      initials: username.slice(0, 2).toUpperCase(),
-      previousAccount: previousAccountIdRef.current
-    });
-
-    // Handle account switching
-    if (previousAccountIdRef.current && 
-        previousAccountIdRef.current !== selectedAccountId.toString()) {
-      console.log('🔄 Account Switch Detected:', {
-        from: previousAccountIdRef.current,
-        to: selectedAccountId.toString()
-      });
-      setShouldClose(true);
-    }
-
-    previousAccountIdRef.current = selectedAccountId.toString();
-  }, [accounts, selectedAccountId]);
-
-  // Handle modal closure after account switch
-  useEffect(() => {
-    if (shouldClose) {
-      onClose();
-      setShouldClose(false);
-    }
-  }, [shouldClose, onClose]);
-
-  // Log mount/unmount
-  useEffect(() => {
-    console.log('🎭 ProfileModal Mounted:', {
+    console.log('🎭 ProfileModal Lifecycle:', {
+      event: 'Mount',
+      mountTime: new Date(mountTimeRef.current).toISOString(),
       showCreateAccount,
       hasAccounts: !!accounts?.length,
       selectedAccountId: selectedAccountId?.toString() || 'none',
       isLoading,
-      isAccountSwitching
+      isAccountSwitching,
+      displayUsername,
+      displayInitials
     });
 
     return () => {
-      console.log('🎭 ProfileModal Unmounted');
+      console.log('🎭 ProfileModal Lifecycle:', {
+        event: 'Unmount',
+        mountDuration: Date.now() - mountTimeRef.current,
+        finalAccountId: selectedAccountId?.toString() || 'none',
+        isAccountSwitching
+      });
     };
   }, []);
 
-  // Get current account info
-  const selectedAccount = accounts?.find(account => account._id === selectedAccountId);
-
-  // Log selected account changes
+  // Effect to update display info when accounts or selectedAccountId changes
   useEffect(() => {
-    if (selectedAccount) {
-      console.log('👤 Selected Account Updated:', {
-        id: selectedAccount._id.toString(),
-        name: selectedAccount.name,
-        username: selectedAccount.identitySettings?.username,
-        type: selectedAccount.type,
-        walletsCount: selectedAccount.wallets.length
+    if (!accounts || !selectedAccountId) {
+      console.log('⚠️ ProfileModal State:', {
+        event: 'Missing Data',
+        hasAccounts: !!accounts,
+        selectedAccountId: selectedAccountId?.toString() || 'none',
+        timestamp: new Date().toISOString()
       });
-      
-      // Update username when account changes
-      if (selectedAccount.identitySettings?.username) {
-        setDisplayUsername(selectedAccount.identitySettings.username);
-      }
+      return;
     }
-  }, [selectedAccount]);
+
+    const selectedAccount = accounts.find(account => account._id === selectedAccountId);
+    if (!selectedAccount) {
+      console.log('⚠️ ProfileModal State:', {
+        event: 'Account Not Found',
+        searchedId: selectedAccountId.toString(),
+        availableAccounts: accounts.map(a => a._id.toString()),
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+
+    const username = selectedAccount.identitySettings?.username || 'username';
+    const initials = username.slice(0, 2).toUpperCase();
+
+    console.log('👤 ProfileModal State Update:', {
+      event: 'Profile Info Change',
+      accountId: selectedAccountId.toString(),
+      previousAccountId: previousAccountIdRef.current,
+      username,
+      initials,
+      accountType: selectedAccount.type,
+      walletsCount: selectedAccount.wallets?.length || 0,
+      timestamp: new Date().toISOString()
+    });
+
+    setDisplayUsername(username);
+    setDisplayInitials(initials);
+
+    // Log account switch without auto-closing
+    if (previousAccountIdRef.current && 
+        previousAccountIdRef.current !== selectedAccountId.toString()) {
+      console.log('🔄 ProfileModal Account Switch:', {
+        event: 'Switch Detected',
+        from: previousAccountIdRef.current,
+        to: selectedAccountId.toString(),
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    previousAccountIdRef.current = selectedAccountId.toString();
+  }, [accounts, selectedAccountId]);
 
   const handleCloseClick = () => {
     console.log('❌ Close Button Clicked');
@@ -138,10 +141,13 @@ export function ProfileModal({
   return (
     <div className="fixed inset-0 bg-black/95 z-50">
       <motion.div 
-        className="flex flex-col h-full"
+        className="flex flex-col h-full profile-modal-content"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 20 }}
+        style={{
+          transition: 'opacity 0.3s ease-out'
+        }}
       >
         <div className="flex justify-between items-center p-4">
           <X
@@ -263,6 +269,13 @@ export function ProfileModal({
           )}
         </AnimatePresence>
       </motion.div>
+      <style>
+        {`
+          .profile-modal-content.fade-out {
+            opacity: 0;
+          }
+        `}
+      </style>
     </div>
   );
 }
