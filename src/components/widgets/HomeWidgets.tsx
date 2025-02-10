@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Send, ArrowUpRight, ArrowDownLeft, CreditCard, QrCode, Lock } from 'lucide-react';
+import { Send, ArrowUpRight, ArrowDownLeft, CreditCard, QrCode, Lock, Plus, MoreVertical } from 'lucide-react';
 import TransactionList from './TransactionList';
 import SpendingTrendWidget from './SpendingTrendWidget';
 import SuggestedActionsWidget from './SuggestedActionsWidget';
@@ -12,6 +12,15 @@ import { useUser } from "@clerk/clerk-react";
 import { Id } from "../../../convex/_generated/dataModel";
 import { useUserAccountsAndWallets, useAccountStore } from "../../hooks/useUserAccountsAndWallets";
 import { formatCurrency } from "@/lib/utils";
+import { WalletCard } from "@/components/ui/WalletCard";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useNavigate } from "react-router-dom";
 
 // Mock data - Replace with real data later
 // const mockTransactions = [ ... ];
@@ -65,6 +74,7 @@ export default function HomeWidgets({
   onWalletSelect: externalOnWalletSelect,
 }: HomeWidgetsProps) {
   const { user } = useUser();
+  const navigate = useNavigate();
   
   // Connect to global state
   const { 
@@ -230,6 +240,30 @@ export default function HomeWidgets({
     console.log('Action clicked:', actionId);
   };
 
+  const handleAddWallet = () => {
+    console.log('🎯 Add Wallet:', {
+      event: 'Add Wallet Button Clicked',
+      currentAccountId: currentAccountId?.toString(),
+      selectedAccountId: selectedAccountId?.toString(),
+      timestamp: new Date().toISOString()
+    });
+
+    try {
+      navigate('/add-wallet');
+      console.log('✅ Navigation successful:', {
+        event: 'Navigation',
+        path: '/add-wallet',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('❌ Navigation failed:', {
+        event: 'Navigation Error',
+        error,
+        timestamp: new Date().toISOString()
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Suggested Actions Widget */}
@@ -245,61 +279,59 @@ export default function HomeWidgets({
             <h2 className="text-sm text-zinc-400">
               {selectedAccount.type === 'personal' ? 'Personal' : 'Business'} Wallets
             </h2>
-            <button className="text-sm text-pink-500">See All</button>
-          </div>
-          <Carousel
-            className="w-full"
-            opts={{
-              align: "start",
-              loop: true
-            }}
-          >
-            <CarouselContent className="-ml-4">
-              {wallets?.map((wallet) => {
-                const walletStyle = walletColors[wallet.type];
-                return (
-                  <CarouselItem key={wallet._id.toString()} className="pl-4 basis-[85%] md:basis-[85%]">
-                    <Card 
-                      className={`border-0 ${walletStyle.color} rounded-xl`}
-                      onClick={() => handleWalletSelect(wallet._id.toString())}
-                    >
-                      <CardContent className="p-6 h-48 relative">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <span className="text-xs text-white/80">{wallet.type.charAt(0).toUpperCase() + wallet.type.slice(1)}</span>
-                            <p className="font-medium text-white">{wallet.name}</p>
-                          </div>
-                          <span className="text-2xl">{walletStyle.icon}</span>
-                        </div>
-                        
-                        <div className="absolute bottom-6 left-6">
-                          <div className="space-y-1">
-                            <p className="text-2xl font-bold text-white">
-                              {formatCurrency(wallet.balance, wallet.currency)}
-                            </p>
-                            <p className="text-sm text-white/80">
-                              Last updated: {new Date(wallet.lastUpdated).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </CarouselItem>
-                );
-              })}
-            </CarouselContent>
-            <div className="flex justify-center gap-2 mt-4">
-              {wallets?.map((_, index) => (
-                <div
-                  key={index}
-                  className={`h-1.5 rounded-full transition-all ${
-                    index === wallets.findIndex(w => w._id.toString() === internalSelectedWalletId)
-                      ? 'w-4 bg-white'
-                      : 'w-1.5 bg-zinc-600'
-                  }`}
-                />
-              ))}
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-zinc-400 hover:text-white hover:bg-white/10"
+                onClick={handleAddWallet}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-zinc-400 hover:text-white hover:bg-white/10"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => console.log('Sort by name')}>
+                    Sort by Name
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => console.log('Sort by balance')}>
+                    Sort by Balance
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => console.log('Hide zero balances')}>
+                    Hide Zero Balances
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
+          </div>
+          <Carousel className="w-full">
+            <CarouselContent>
+              {wallets.map((wallet) => (
+                <CarouselItem key={wallet._id.toString()} className="basis-[85%] sm:basis-[45%] md:basis-[35%]">
+                  <WalletCard
+                    type={wallet.type}
+                    name={wallet.name}
+                    balance={formatCurrency(wallet.balance || 0, wallet.currency)}
+                    lastTransaction={new Date(wallet.lastUpdated).toLocaleDateString()}
+                    onClick={() => handleWalletSelect(wallet._id.toString())}
+                  />
+                </CarouselItem>
+              ))}
+              <CarouselItem className="basis-[85%] sm:basis-[45%] md:basis-[35%]">
+                <WalletCard
+                  type="add"
+                  onClick={handleAddWallet}
+                />
+              </CarouselItem>
+            </CarouselContent>
           </Carousel>
         </div>
 

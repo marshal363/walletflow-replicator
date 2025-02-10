@@ -15,6 +15,8 @@ import Wallet from "./pages/Wallet";
 import SignInPage from "./pages/SignIn";
 import SignUpPage from "./pages/SignUp";
 import AuthProvider from "./components/AuthProvider";
+import AddWallet from "./pages/AddWallet";
+import MultisigSetup from "./pages/MultisigSetup";
 
 const queryClient = new QueryClient();
 
@@ -35,6 +37,8 @@ const App = () => {
               {/* App routes */}
               <Route path="/lightning" element={<Lightning />} />
               <Route path="/wallet" element={<Wallet />} />
+              <Route path="/add-wallet" element={<AddWallet />} />
+              <Route path="/add-wallet/multisig-setup" element={<MultisigSetup />} />
               <Route path="/send" element={<Send />} />
               <Route path="/send/:id" element={<Send />} />
               <Route path="/request/:id" element={<Send />} />
