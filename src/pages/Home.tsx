@@ -1,45 +1,40 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Search } from 'lucide-react';
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
 import { Button } from "@/components/ui/button";
 import { ProfileModal } from "@/components/profile/ProfileModal";
-import { Account } from "@/types/account";
 import HomeWidgets from "@/components/widgets/HomeWidgets";
 import { Navigation } from "@/components/layout/Navigation";
+import { useUserAccountsAndWallets, useAccountStore } from "@/hooks/useUserAccountsAndWallets";
 
 export default function Home() {
   const [selectedWallet, setSelectedWallet] = useState('spending');
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   
-  const [accounts, setAccounts] = useState<Account[]>([
-    {
-      id: 'personal',
-      type: 'PERSONAL',
-      balance: 219.59,
-      isSelected: true,
-      name: 'Sergio Andres Ardila Ardila',
-      username: '@dominusmendacium'
-    },
-    {
-      id: 'business',
-      type: 'JOINT',
-      balance: 693.75,
-      isSelected: false,
-      name: 'Business Account',
-      username: '@businessname'
-    }
-  ]);
+  // Connect to global state
+  const { currentAccountId } = useAccountStore();
+  const {
+    accounts,
+    isLoading,
+    selectedAccountId,
+    isAccountSwitching
+  } = useUserAccountsAndWallets();
 
-  const handleAccountSelect = (accountId: string) => {
-    setAccounts(accounts.map(account => ({
-      ...account,
-      isSelected: account.id === accountId
-    })));
-    setShowCreateAccount(false);
-  };
+  // Track header updates
+  useEffect(() => {
+    console.log('🏠 Home Header:', {
+      event: 'State Update',
+      globalAccountId: currentAccountId?.toString() || 'none',
+      localAccountId: selectedAccountId?.toString() || 'none',
+      hasAccounts: !!accounts?.length,
+      isLoading,
+      isAccountSwitching,
+      timestamp: new Date().toISOString()
+    });
+  }, [currentAccountId, selectedAccountId, accounts, isLoading, isAccountSwitching]);
 
-  const selectedAccount = accounts.find(account => account.isSelected);
+  const selectedAccount = accounts?.find(account => account._id === currentAccountId);
 
   return (
     <div className="min-h-screen">
@@ -52,8 +47,24 @@ export default function Home() {
             >
               <UserButton />
               <div>
-                <p className="font-medium">{selectedAccount?.name}</p>
-                <p className="text-sm text-muted-foreground">{selectedAccount?.username}</p>
+                {isLoading || isAccountSwitching ? (
+                  <div className="space-y-2">
+                    <div className="h-4 w-32 bg-zinc-800 animate-pulse rounded"></div>
+                    <div className="h-3 w-24 bg-zinc-800 animate-pulse rounded"></div>
+                  </div>
+                ) : selectedAccount ? (
+                  <>
+                    <p className="font-medium">{selectedAccount.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      @{selectedAccount.identitySettings?.username || 'username'}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium text-muted-foreground">No Account Selected</p>
+                    <p className="text-sm text-muted-foreground">Click to set up</p>
+                  </>
+                )}
               </div>
             </div>
             <Button variant="ghost" size="icon">
@@ -73,8 +84,6 @@ export default function Home() {
               setShowProfileModal(false);
               setShowCreateAccount(false);
             }}
-            accounts={accounts}
-            onAccountSelect={handleAccountSelect}
             showCreateAccount={showCreateAccount}
             setShowCreateAccount={setShowCreateAccount}
           />
