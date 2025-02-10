@@ -22,6 +22,7 @@ import type * as insights from "../insights.js";
 import type * as messages from "../messages.js";
 import type * as notifications from "../notifications.js";
 import type * as paymentRequests from "../paymentRequests.js";
+import type * as testing from "../testing.js";
 import type * as transactions from "../transactions.js";
 import type * as users from "../users.js";
 import type * as wallets from "../wallets.js";
@@ -44,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   messages: typeof messages;
   notifications: typeof notifications;
   paymentRequests: typeof paymentRequests;
+  testing: typeof testing;
   transactions: typeof transactions;
   users: typeof users;
   wallets: typeof wallets;

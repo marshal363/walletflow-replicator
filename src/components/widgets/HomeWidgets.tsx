@@ -14,12 +14,7 @@ import { useUserAccountsAndWallets, useAccountStore } from "../../hooks/useUserA
 import { formatCurrency } from "@/lib/utils";
 
 // Mock data - Replace with real data later
-const mockTransactions = [
-  { id: '1', name: "McDonald's", type: 'Apple Pay', amount: '-21,763', fiat: '-10.19', wallet: 'Spending', timestamp: '2024-01-20T10:30:00Z' },
-  { id: '2', name: 'MAXI', type: 'Montréal, QC', amount: '-128,821', fiat: '-16.00', wallet: 'Spending', timestamp: '2024-01-20T09:15:00Z' },
-  { id: '3', name: 'Starbucks', type: 'Apple Pay', amount: '-15,000', fiat: '-5.25', wallet: 'Spending', timestamp: '2024-01-20T08:45:00Z' },
-  { id: '4', name: 'Amazon', type: 'Online Purchase', amount: '-250,000', fiat: '-87.50', wallet: 'Spending', timestamp: '2024-01-19T22:30:00Z' }
-];
+// const mockTransactions = [ ... ];
 
 const quickActions = {
   spending: [
@@ -87,6 +82,11 @@ export default function HomeWidgets({
     setSelectedWalletId
   } = useUserAccountsAndWallets();
 
+  // Query wallets only when we have a selected account
+  const wallets = useQuery(api.wallets.getWallets, 
+    currentAccountId ? { accountId: currentAccountId } : "skip"
+  );
+
   // Track state synchronization
   useEffect(() => {
     console.log('🏠 HomeWidgets Sync:', {
@@ -99,10 +99,20 @@ export default function HomeWidgets({
     });
   }, [currentAccountId, selectedAccountId, globalIsAccountSwitching, isAccountSwitching]);
 
-  // Query wallets only when we have a selected account
-  const wallets = useQuery(api.wallets.getWallets, 
-    currentAccountId ? { accountId: currentAccountId } : "skip"
-  );
+  // Reset selected wallet when account changes
+  useEffect(() => {
+    if (currentAccountId && wallets?.length > 0) {
+      const defaultWallet = wallets[0];
+      console.log('🔄 HomeWidgets Reset:', {
+        event: 'Account Switch Reset',
+        newAccountId: currentAccountId.toString(),
+        defaultWalletId: defaultWallet._id.toString(),
+        timestamp: new Date().toISOString()
+      });
+      setSelectedWalletId(defaultWallet._id.toString());
+      externalOnWalletSelect(defaultWallet._id.toString());
+    }
+  }, [currentAccountId, wallets, setSelectedWalletId, externalOnWalletSelect]);
 
   // Debug log for component state and data
   useEffect(() => {
@@ -119,20 +129,6 @@ export default function HomeWidgets({
       timestamp: new Date().toISOString()
     });
   }, [accounts, currentAccountId, selectedAccountId, wallets, externalSelectedWalletId, internalSelectedWalletId, accountsLoading, globalIsAccountSwitching]);
-
-  // Sync internal and external wallet selection
-  useEffect(() => {
-    if (internalSelectedWalletId && internalSelectedWalletId !== externalSelectedWalletId) {
-      console.log('🔄 HomeWidgets Sync:', {
-        event: 'Wallet Selection Sync',
-        from: externalSelectedWalletId,
-        to: internalSelectedWalletId,
-        accountId: currentAccountId?.toString() || 'none',
-        timestamp: new Date().toISOString()
-      });
-      externalOnWalletSelect(internalSelectedWalletId);
-    }
-  }, [internalSelectedWalletId, externalSelectedWalletId, externalOnWalletSelect, currentAccountId]);
 
   // Handle wallet selection
   const handleWalletSelect = useCallback((id: string) => {
@@ -329,7 +325,6 @@ export default function HomeWidgets({
         className="px-4"
       >
         <TransactionList
-          transactions={mockTransactions}
           wallets={formattedWallets}
           selectedWalletId={internalSelectedWalletId}
           onWalletSelect={handleWalletSelect}
