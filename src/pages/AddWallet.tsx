@@ -5,8 +5,12 @@ import { Input } from "@/components/ui/input";
 import { X, ChevronRight } from "lucide-react";
 import { Bitcoin, Shield } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { generateMnemonic } from "bip39";
 import { motion } from "framer-motion";
+import { generateWallet, isValidMnemonic, WalletKeys, NETWORKS } from "@/lib/bitcoin";
+import { useToast } from "@/components/ui/use-toast";
+import { useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { useAccountStore } from "@/hooks/useUserAccountsAndWallets";
 
 interface WalletType {
   id: 'bitcoin' | 'multisig';
@@ -32,37 +36,175 @@ const walletTypes: WalletType[] = [
 
 export default function AddWallet() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const { currentAccountId } = useAccountStore();
+  
   const [name, setName] = useState('');
   const [selectedType, setSelectedType] = useState<'bitcoin' | 'multisig' | null>(null);
   const [showSeedModal, setShowSeedModal] = useState(false);
-  const [seedPhrase, setSeedPhrase] = useState<string>('');
+  const [walletKeys, setWalletKeys] = useState<WalletKeys | null>(null);
+  const [seedConfirmed, setSeedConfirmed] = useState(false);
 
-  const handleCreateBitcoinWallet = () => {
-    const mnemonic = generateMnemonic();
-    setSeedPhrase(mnemonic);
-    setShowSeedModal(true);
-  };
+  const createWallet = useMutation(api.wallets.createWallet);
 
-  const handleSubmit = () => {
-    if (!name || !selectedType) return;
-    
-    if (selectedType === 'multisig') {
-      navigate('/add-wallet/multisig-setup', { state: { name } });
-    } else {
-      handleCreateBitcoinWallet();
+  const handleCreateBitcoinWallet = async () => {
+    try {
+      console.log('🔄 Starting wallet generation:', {
+        event: 'Wallet Generation Start',
+        type: selectedType,
+        timestamp: new Date().toISOString()
+      });
+
+      // Generate wallet based on type (spending for bitcoin, savings for taproot)
+      const walletType = selectedType === 'bitcoin' ? 'spending' : 'savings';
+      
+      console.log('🔄 Generating wallet with type:', {
+        event: 'Wallet Type Selected',
+        walletType,
+        timestamp: new Date().toISOString()
+      });
+
+      // Ensure all required libraries are loaded
+      if (!generateWallet) {
+        throw new Error('Bitcoin utilities not properly initialized');
+      }
+
+      const newWallet = generateWallet(walletType);
+      
+      if (!newWallet || !newWallet.keyPair || !newWallet.mnemonic) {
+        throw new Error('Failed to generate wallet keys');
+      }
+
+      console.log('✅ Wallet generated successfully:', {
+        event: 'Wallet Keys Generated',
+        type: walletType,
+        address: newWallet.address,
+        path: newWallet.path,
+        hasPublicKey: !!newWallet.keyPair.publicKey,
+        hasPrivateKey: !!newWallet.keyPair.privateKey,
+        hasWIF: !!newWallet.keyPair.wif,
+        timestamp: new Date().toISOString()
+      });
+      
+      setWalletKeys(newWallet);
+      setShowSeedModal(true);
+      
+    } catch (error) {
+      console.error('❌ Wallet Generation Error:', {
+        event: 'Wallet Generation Failed',
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : error,
+        type: selectedType,
+        timestamp: new Date().toISOString()
+      });
+      
+      toast({
+        title: "Error creating wallet",
+        description: error instanceof Error 
+          ? `Failed to generate wallet: ${error.message}`
+          : "Failed to generate wallet keys. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 
-  const handleConfirmSeed = () => {
-    // Here we would save the wallet data
-    console.log('Creating Bitcoin wallet:', {
-      name,
-      type: 'bitcoin',
-      mnemonic: seedPhrase
-    });
+  const handleSubmit = async () => {
+    if (!name || !selectedType || !currentAccountId) return;
     
-    // Navigate back to wallet list
-    navigate(-1);
+    try {
+      console.log('🔄 Starting wallet creation:', {
+        event: 'Wallet Creation Start',
+        type: selectedType,
+        name,
+        accountId: currentAccountId,
+        timestamp: new Date().toISOString()
+      });
+
+      if (selectedType === 'multisig') {
+        navigate('/add-wallet/multisig-setup', { 
+          state: { 
+            name,
+            accountId: currentAccountId 
+          } 
+        });
+        return;
+      }
+
+      await handleCreateBitcoinWallet();
+      
+    } catch (error) {
+      console.error('❌ Wallet Creation Error:', {
+        event: 'Wallet Creation Failed',
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : error,
+        type: selectedType,
+        timestamp: new Date().toISOString()
+      });
+      
+      toast({
+        title: "Error creating wallet",
+        description: error instanceof Error 
+          ? `Something went wrong: ${error.message}`
+          : "Something went wrong. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleConfirmSeed = async () => {
+    if (!walletKeys || !currentAccountId) return;
+
+    try {
+      const username = name.toLowerCase().replace(/\s+/g, '-');
+      
+      // Create wallet in database
+      const walletId = await createWallet({
+        accountId: currentAccountId,
+        type: selectedType === 'bitcoin' ? 'spending' : 'savings',
+        name,
+        username,
+      });
+
+      console.log('✅ Wallet Created:', {
+        event: 'Wallet Created in DB',
+        walletId: walletId,
+        type: selectedType,
+        timestamp: new Date().toISOString()
+      });
+
+      toast({
+        title: "Wallet created successfully",
+        description: "Your new wallet is ready to use.",
+      });
+
+      // Navigate back to wallet list
+      navigate(-1);
+      
+    } catch (error) {
+      console.error('❌ Database Error:', {
+        event: 'Wallet DB Creation Failed',
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : error,
+        timestamp: new Date().toISOString()
+      });
+      
+      toast({
+        title: "Error saving wallet",
+        description: error instanceof Error 
+          ? `Failed to save wallet: ${error.message}`
+          : "Failed to save wallet. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -135,7 +277,7 @@ export default function AddWallet() {
         <div className="space-y-4">
           <Button
             onClick={handleSubmit}
-            disabled={!name || !selectedType}
+            disabled={!name || !selectedType || !currentAccountId}
             className="w-full bg-blue-500 hover:bg-blue-600 text-white"
           >
             Create
@@ -157,18 +299,33 @@ export default function AddWallet() {
               Your wallet was created. Take a moment to safely backup your mnemonic seed.
             </p>
             <div className="grid grid-cols-3 gap-2">
-              {seedPhrase.split(' ').map((word, index) => (
+              {walletKeys?.mnemonic.split(' ').map((word, index) => (
                 <div key={index} className="bg-zinc-800 p-2 rounded">
                   <span className="text-zinc-400">{index + 1}.</span> {word}
                 </div>
               ))}
             </div>
-            <Button
-              onClick={handleConfirmSeed}
-              className="w-full bg-blue-500 hover:bg-blue-600"
-            >
-              I've Backed Up My Seed
-            </Button>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="confirm-backup"
+                  checked={seedConfirmed}
+                  onChange={(e) => setSeedConfirmed(e.target.checked)}
+                  className="rounded border-zinc-600"
+                />
+                <label htmlFor="confirm-backup" className="text-sm text-zinc-400">
+                  I have safely backed up my seed phrase
+                </label>
+              </div>
+              <Button
+                onClick={handleConfirmSeed}
+                disabled={!seedConfirmed}
+                className="w-full bg-blue-500 hover:bg-blue-600 disabled:opacity-50"
+              >
+                Continue
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

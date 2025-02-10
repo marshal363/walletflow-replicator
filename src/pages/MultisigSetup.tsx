@@ -8,11 +8,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { generateMnemonic } from "bip39"; // We'll need to add this dependency
+import { motion } from "framer-motion";
+import { useToast } from "@/components/ui/use-toast";
+import { useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { 
+  generateWallet, 
+  generateMultisigAddress, 
+  WalletKeys, 
+  MultisigConfig 
+} from "@/lib/bitcoin";
 
 interface VaultKey {
   id: number;
-  mnemonic?: string;
+  keys?: WalletKeys;
   status: 'pending' | 'created' | 'imported';
 }
 
@@ -27,12 +36,14 @@ interface VaultSettings {
 export default function MultisigSetup() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { name } = location.state || {};
+  const { name, accountId } = location.state || {};
+  const { toast } = useToast();
 
   const [showInfo, setShowInfo] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showSeedModal, setShowSeedModal] = useState(false);
   const [currentKey, setCurrentKey] = useState<VaultKey | null>(null);
+  const [seedConfirmed, setSeedConfirmed] = useState(false);
   
   const [vaultKeys, setVaultKeys] = useState<VaultKey[]>([
     { id: 1, status: 'pending' },
@@ -45,28 +56,132 @@ export default function MultisigSetup() {
     type: 'p2wsh'
   });
 
-  const handleCreateKey = (keyId: number) => {
-    const mnemonic = generateMnemonic();
-    const newKey: VaultKey = {
-      id: keyId,
-      mnemonic,
-      status: 'created'
-    };
-    
-    setCurrentKey(newKey);
-    setShowSeedModal(true);
+  const createWallet = useMutation(api.wallets.createWallet);
+
+  const handleCreateKey = async (keyId: number) => {
+    try {
+      // Generate a new key pair
+      const newKeys = generateWallet('savings');
+      
+      const newKey: VaultKey = {
+        id: keyId,
+        keys: newKeys,
+        status: 'created'
+      };
+      
+      setCurrentKey(newKey);
+      setShowSeedModal(true);
+
+      console.log('🔑 Vault Key Generation:', {
+        event: 'Vault Key Generated',
+        keyId,
+        address: newKeys.address,
+        path: newKeys.path,
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (error) {
+      console.error('❌ Key Generation Error:', {
+        event: 'Key Generation Failed',
+        keyId,
+        error,
+        timestamp: new Date().toISOString()
+      });
+      
+      toast({
+        title: "Error creating key",
+        description: "Failed to generate key pair. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleConfirmSeed = () => {
-    if (!currentKey) return;
+  const handleConfirmSeed = async () => {
+    if (!currentKey?.keys) return;
 
-    setVaultKeys(keys => 
-      keys.map(key => 
+    try {
+      setVaultKeys(keys => 
+        keys.map(key => 
+          key.id === currentKey.id ? currentKey : key
+        )
+      );
+      setShowSeedModal(false);
+      setCurrentKey(null);
+      setSeedConfirmed(false);
+
+      // Check if all keys are created
+      const updatedKeys = vaultKeys.map(key => 
         key.id === currentKey.id ? currentKey : key
-      )
-    );
-    setShowSeedModal(false);
-    setCurrentKey(null);
+      );
+
+      if (updatedKeys.every(key => key.status === 'created')) {
+        await handleCreateMultisigWallet(updatedKeys);
+      }
+      
+    } catch (error) {
+      console.error('❌ Key Confirmation Error:', {
+        event: 'Key Confirmation Failed',
+        keyId: currentKey.id,
+        error,
+        timestamp: new Date().toISOString()
+      });
+      
+      toast({
+        title: "Error saving key",
+        description: "Failed to save key. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleCreateMultisigWallet = async (keys: VaultKey[]) => {
+    if (!accountId || !name) return;
+
+    try {
+      // Create wallet in database with proper types
+      const walletId = await createWallet({
+        accountId,
+        type: 'multisig',
+        name,
+        username: name.toLowerCase().replace(/\s+/g, '-'),
+        multisigConfig: {
+          requiredSignatures: settings.quorum.required,
+          signers: keys.map(key => ({
+            pubKey: key.keys!.keyPair.publicKey,
+            weight: 1,
+          })),
+          scriptType: 'p2wsh',
+        }
+      });
+
+      console.log('✅ Multisig Wallet Created:', {
+        event: 'Multisig Wallet Created',
+        walletId,
+        requiredSignatures: settings.quorum.required,
+        totalSigners: settings.quorum.total,
+        timestamp: new Date().toISOString()
+      });
+
+      toast({
+        title: "Multisig wallet created",
+        description: "Your new vault is ready to use.",
+      });
+
+      navigate(-1);
+      
+    } catch (error) {
+      console.error('❌ Multisig Creation Error:', {
+        event: 'Multisig Creation Failed',
+        error,
+        timestamp: new Date().toISOString()
+      });
+      
+      toast({
+        title: "Error creating multisig wallet",
+        description: "Failed to create vault. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -93,10 +208,10 @@ export default function MultisigSetup() {
               {/* Add vault icon here */}
             </div>
             <DialogTitle className="text-xl font-medium">
-              A Vault is a 2-of-3 multisig wallet.
+              A Vault is a {settings.quorum.required}-of-{settings.quorum.total} multisig wallet
             </DialogTitle>
             <p className="text-zinc-400">
-              It needs 2 vault keys to spend and a third one you can use as backup.
+              It needs {settings.quorum.required} vault keys to spend and {settings.quorum.total - settings.quorum.required} backup key(s).
             </p>
             <Button
               onClick={() => {
@@ -162,16 +277,16 @@ export default function MultisigSetup() {
 
             {/* Wallet Type Selection */}
             <div className="space-y-2">
-              <label className="text-sm text-zinc-400">Wallet Type</label>
+              <label className="text-sm text-zinc-400">Script Type</label>
               <div className="space-y-2">
                 {[
-                  { id: 'p2wsh', label: 'Best practice (p2wsh)' },
-                  { id: 'p2sh-p2wsh', label: 'Best compatibility (p2sh-p2wsh)' },
-                  { id: 'p2sh', label: 'Legacy (p2sh)' }
+                  { id: 'p2wsh' as const, label: 'Native SegWit (P2WSH)' },
+                  { id: 'p2sh-p2wsh' as const, label: 'Wrapped SegWit (P2SH-P2WSH)' },
+                  { id: 'p2sh' as const, label: 'Legacy (P2SH)' }
                 ].map((type) => (
                   <button
                     key={type.id}
-                    onClick={() => setSettings(s => ({ ...s, type: type.id as VaultSettings['type'] }))}
+                    onClick={() => setSettings(s => ({ ...s, type: type.id }))}
                     className={`w-full p-3 rounded flex items-center justify-between ${
                       settings.type === type.id
                         ? 'bg-blue-500 bg-opacity-20 border border-blue-500'
@@ -208,18 +323,33 @@ export default function MultisigSetup() {
               Your Vault key was created. Take a moment to safely backup your mnemonic seed.
             </p>
             <div className="grid grid-cols-3 gap-2">
-              {currentKey?.mnemonic?.split(' ').map((word, index) => (
+              {currentKey?.keys?.mnemonic.split(' ').map((word, index) => (
                 <div key={index} className="bg-zinc-800 p-2 rounded">
                   <span className="text-zinc-400">{index + 1}.</span> {word}
                 </div>
               ))}
             </div>
-            <Button
-              onClick={handleConfirmSeed}
-              className="w-full bg-blue-500 hover:bg-blue-600"
-            >
-              Done
-            </Button>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="confirm-backup"
+                  checked={seedConfirmed}
+                  onChange={(e) => setSeedConfirmed(e.target.checked)}
+                  className="rounded border-zinc-600"
+                />
+                <label htmlFor="confirm-backup" className="text-sm text-zinc-400">
+                  I have safely backed up my seed phrase
+                </label>
+              </div>
+              <Button
+                onClick={handleConfirmSeed}
+                disabled={!seedConfirmed}
+                className="w-full bg-blue-500 hover:bg-blue-600 disabled:opacity-50"
+              >
+                Continue
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -242,10 +372,10 @@ export default function MultisigSetup() {
               </div>
               <div className="flex-1">
                 <h3 className="font-medium">Vault Key {key.id}</h3>
-                {key.status === 'created' && (
-                  <button className="text-sm text-blue-500">
-                    Share...
-                  </button>
+                {key.status === 'created' && key.keys && (
+                  <p className="text-sm text-zinc-400">
+                    {key.keys.address.slice(0, 8)}...{key.keys.address.slice(-8)}
+                  </p>
                 )}
               </div>
               {key.status === 'pending' && (
@@ -273,13 +403,10 @@ export default function MultisigSetup() {
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-black border-t border-zinc-800">
         <Button
           disabled={!vaultKeys.every(key => key.status === 'created')}
-          onClick={() => {
-            // Handle vault creation
-            console.log('Creating vault with settings:', settings);
-          }}
-          className="w-full bg-zinc-800 text-zinc-400 disabled:opacity-50"
+          onClick={() => handleCreateMultisigWallet(vaultKeys)}
+          className="w-full bg-blue-500 hover:bg-blue-600 disabled:opacity-50"
         >
-          Create
+          Create Vault
         </Button>
       </div>
     </div>
