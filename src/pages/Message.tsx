@@ -7,6 +7,7 @@ import { api } from "@convex/_generated/api";
 import { MessageInput } from "@/components/messages/MessageInput";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { Send, Zap, QrCode, Split, ArrowLeft } from "lucide-react";
 
 // Debug logger
 const debug = {
@@ -24,9 +25,28 @@ const debug = {
   }
 };
 
+interface Message {
+  _id: string;
+  type: "text" | "payment_request" | "payment_sent" | "payment_received" | "system";
+  content: string;
+  senderId: string;
+  timestamp: string;
+  status: "sent" | "delivered" | "read";
+  metadata?: {
+    fiatAmount?: string;
+    replyTo?: string;
+    attachments?: string[];
+    reactions?: Array<{
+      userId: string;
+      type: string;
+    }>;
+  };
+}
+
 const Message = () => {
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [showPaymentActions, setShowPaymentActions] = useState(false);
   const navigate = useNavigate();
   const { id: conversationId } = useParams();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -170,6 +190,41 @@ const Message = () => {
     }
   }, [conversationId, message, isSending, sendMessage]);
 
+  const renderMessage = (msg: Message) => {
+    if (msg.type === 'payment_request') {
+      return (
+        <div className="bg-zinc-900/80 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Zap className="h-4 w-4 text-blue-500" />
+            <span className="text-sm font-medium text-zinc-200">Payment Request</span>
+          </div>
+          <div className="text-xl font-bold mb-1 text-white">
+            {msg.content} BTC
+          </div>
+          <div className="text-xs text-zinc-400 mb-3">
+            ≈ ${msg.metadata?.fiatAmount}
+          </div>
+          <button className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-700 transition-colors">
+            Pay Now
+          </button>
+        </div>
+      );
+    }
+
+    if (msg.type === 'payment_sent' || msg.type === 'payment_received') {
+      return (
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{msg.type === 'payment_sent' ? 'You sent' : 'Received'}</span>
+          <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full">
+            {msg.content} BTC
+          </span>
+        </div>
+      );
+    }
+
+    return <span className="text-sm">{msg.content}</span>;
+  };
+
   if (!conversationId) {
     debug.log('No conversation ID, redirecting to messages');
     navigate("/messages");
@@ -187,61 +242,137 @@ const Message = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-black text-white">
-      <Header 
-        title={otherParticipant.fullName}
-        subtitle={`@${otherParticipant.username}`}
-        showBack={true}
-      >
-        {otherParticipant.status === "active" && (
-          <div className="w-2 h-2 bg-green-500 rounded-full ml-2" />
-        )}
-      </Header>
+      <div className="sticky top-0 z-50">
+        <div className="absolute inset-0 bg-gradient-to-b from-black/95 via-black/90 to-transparent" />
+        <div className="relative z-10">
+          {/* Back button and profile section */}
+          <div className="flex items-center p-4 gap-3 border-b border-zinc-800/50 bg-black/40 backdrop-blur-md">
+            <button 
+              onClick={() => navigate(-1)}
+              className="p-2 hover:bg-zinc-800/50 rounded-full transition-colors"
+            >
+              <ArrowLeft className="h-6 w-6" />
+            </button>
+            <Avatar className="h-10 w-10 bg-blue-500 flex items-center justify-center text-xl font-semibold">
+              <span className="uppercase">
+                {otherParticipant.username?.charAt(0) || otherParticipant.fullName.charAt(0)}
+              </span>
+            </Avatar>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h2 className="font-semibold">{otherParticipant.fullName}</h2>
+                {otherParticipant.status === "active" && (
+                  <div className="w-2 h-2 bg-green-500 rounded-full" />
+                )}
+              </div>
+              <p className="text-sm text-zinc-400">@{otherParticipant.username}</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <ScrollArea className="flex-1 p-4">
+      <ScrollArea className="flex-1 px-4">
         {!conversation?.messages?.length ? (
           <div className="flex items-center justify-center h-full text-zinc-500">
             No messages yet. Start a conversation!
           </div>
         ) : (
-          <div className="space-y-4">
-            {conversation.messages.map((msg) => (
-              <div 
-                key={msg._id}
-                className={cn(
-                  "flex",
-                  msg.senderId === otherParticipant._id ? "justify-start" : "justify-end"
-                )}
-              >
-                <div className={cn(
-                  "max-w-[80%] p-3 rounded-lg",
-                  msg.type === "payment_request" && "bg-purple-900/50 border border-purple-500/50",
-                  msg.type === "payment_sent" && "bg-green-900/50 border border-green-500/50",
-                  msg.type === "payment_received" && "bg-blue-900/50 border border-blue-500/50",
-                  msg.type === "text" && msg.senderId === otherParticipant._id ? "bg-zinc-800" : "bg-blue-600"
-                )}>
-                  <p className="text-sm">{msg.content}</p>
-                  <span className="text-xs text-zinc-400">
-                    {new Date(msg.timestamp).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </span>
+          <div className="space-y-2 py-4">
+            {conversation.messages.map((msg, index) => {
+              const showTimestamp = index === 0 || 
+                new Date(msg.timestamp).getTime() - new Date(conversation.messages[index - 1].timestamp).getTime() > 300000;
+
+              return (
+                <div key={msg._id}>
+                  {showTimestamp && (
+                    <div className="text-center my-4">
+                      <span className="text-xs text-zinc-500">
+                        {new Date(msg.timestamp).toLocaleString('en-US', {
+                          weekday: 'short',
+                          hour: 'numeric',
+                          minute: 'numeric',
+                          hour12: true
+                        })}
+                      </span>
+                    </div>
+                  )}
+                  <div 
+                    className={cn(
+                      "flex",
+                      msg.senderId === otherParticipant._id ? "justify-start" : "justify-end"
+                    )}
+                  >
+                    <div className={cn(
+                      "max-w-[280px]",
+                      msg.type === "payment_request" ? "w-[280px]" : "max-w-[85%]",
+                      msg.type === "text" && msg.senderId === otherParticipant._id ? "bg-zinc-800" : "bg-blue-600",
+                      msg.type !== "payment_request" && "rounded-2xl px-4 py-2.5"
+                    )}>
+                      {renderMessage(msg as Message)}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             <div ref={messagesEndRef} />
           </div>
         )}
       </ScrollArea>
 
-      <div className="p-4 space-y-4">
-        <MessageInput
-          value={message}
-          onChange={handleMessageChange}
-          onSubmit={handleSend}
-          placeholder={`Message ${otherParticipant.username}`}
-          disabled={isSending}
-        />
+      {/* Fixed bottom input section */}
+      <div className="sticky bottom-0 z-50">
+        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/90 to-transparent" />
+        <div className="relative z-10 p-4 border-t border-zinc-800/50 bg-black/40 backdrop-blur-md">
+          {!showPaymentActions ? (
+            <div className="flex items-center space-x-3">
+              <button 
+                onClick={() => setShowPaymentActions(true)}
+                className="h-11 w-11 rounded-full bg-zinc-800/80 flex items-center justify-center hover:bg-zinc-700 transition-colors"
+              >
+                <Zap className="h-5 w-5 text-white" />
+              </button>
+              <div className="flex-1">
+                <MessageInput
+                  value={message}
+                  onChange={handleMessageChange}
+                  onSubmit={handleSend}
+                  placeholder={`Message ${otherParticipant.username}`}
+                  disabled={isSending}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex space-x-2">
+              <button 
+                onClick={() => navigate(`/send/${conversationId}`)} 
+                className="flex-1 bg-blue-600 text-white rounded-full py-2.5 px-4 font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+              >
+                <Send className="h-5 w-5" />
+                <span>Send</span>
+              </button>
+              <button 
+                onClick={() => navigate(`/request/${conversationId}`)} 
+                className="flex-1 bg-zinc-800/80 text-white rounded-full py-2.5 px-4 font-medium hover:bg-zinc-700 transition-colors flex items-center justify-center gap-2"
+              >
+                <QrCode className="h-5 w-5" />
+                <span>Request</span>
+              </button>
+              <button 
+                onClick={() => navigate(`/split/${conversationId}`)} 
+                className="flex-1 bg-zinc-800/80 text-white rounded-full py-2.5 px-4 font-medium hover:bg-zinc-700 transition-colors flex items-center justify-center gap-2"
+              >
+                <Split className="h-5 w-5" />
+                <span>Split</span>
+              </button>
+              <button 
+                onClick={() => setShowPaymentActions(false)}
+                className="h-11 w-11 rounded-full bg-zinc-800/80 flex items-center justify-center hover:bg-zinc-700 transition-colors"
+              >
+                <ArrowLeft className="h-5 w-5 text-white" />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
