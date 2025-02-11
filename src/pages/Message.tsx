@@ -345,7 +345,7 @@ const Message = () => {
             <div className="flex space-x-2">
               <button 
                 onClick={() => navigate(`/send/${conversationId}`)} 
-                className="flex-1 bg-blue-600 text-white rounded-full py-2.5 px-4 font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                className="flex-1 bg-[#0066FF] text-white rounded-full py-2.5 px-4 font-medium hover:bg-[#0052CC] transition-colors flex items-center justify-center gap-2"
               >
                 <Send className="h-5 w-5" />
                 <span>Send</span>

@@ -218,8 +218,9 @@ function AccountSwitcher({ onCreateAccount, hideProfileInfo = false }: AccountSw
             <motion.button
               layout
               onClick={() => handleAccountChange(account._id.toString())}
-              className={`w-full p-4 rounded-lg ${account._id === selectedAccountId ? 'bg-purple-600' : 'bg-zinc-800'
-                } relative overflow-hidden group`}
+              className={`w-full p-4 rounded-lg ${
+                account._id === selectedAccountId ? 'bg-[#0066FF]' : 'bg-black/40 backdrop-blur-md border border-[#0066FF]/20'
+              } relative overflow-hidden group hover:bg-[#0066FF]/10 transition-colors`}
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               transition={{
@@ -227,7 +228,7 @@ function AccountSwitcher({ onCreateAccount, hideProfileInfo = false }: AccountSw
               }}
             >
               <motion.div
-                className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-purple-400/10 to-purple-600/20"
+                className="absolute inset-0 bg-gradient-to-r from-[#0066FF]/20 via-[#0066FF]/10 to-[#0066FF]/20"
                 initial={false}
                 animate={{
                   opacity: account._id === selectedAccountId ? 1 : 0,

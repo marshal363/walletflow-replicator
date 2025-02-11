@@ -191,7 +191,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
                 </div>
                 <div className="text-right flex flex-col items-end">
                   <p className={cn(
-                    tx.type === 'receive' ? 'text-green-500' : '',
+                    tx.type === 'receive' ? 'text-[#0066FF]' : '',
                     "font-medium leading-snug"
                   )}>
                     {tx.type === 'receive' ? '+' : '-'}{tx.amount.toLocaleString()}

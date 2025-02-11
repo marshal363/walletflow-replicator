@@ -57,7 +57,7 @@ export function Navigation() {
             className={cn(
               "absolute left-1/2 -translate-x-1/2 -translate-y-6 h-14 w-14 rounded-full flex items-center justify-center",
               location.pathname === "/lightning" 
-                ? "bg-blue-600 text-white hover:bg-blue-700" 
+                ? "bg-[#0066FF] text-white hover:bg-[#0052CC]" 
                 : "bg-white text-black hover:bg-zinc-200",
               "transition-colors"
             )}

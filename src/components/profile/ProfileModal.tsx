@@ -151,11 +151,11 @@ export function ProfileModal({
       >
         <div className="flex justify-between items-center p-4">
           <X
-            className="h-6 w-6 cursor-pointer"
+            className="h-6 w-6 cursor-pointer hover:text-blue-400 transition-colors"
             onClick={handleCloseClick}
           />
           <button 
-            className="px-4 py-1.5 rounded-full bg-white/10 text-sm"
+            className="px-4 py-1.5 rounded-full bg-blue-600 hover:bg-blue-700 transition-colors text-sm"
             onClick={handleUpgradeClick}
           >
             Upgrade
@@ -173,7 +173,7 @@ export function ProfileModal({
             >
               {isLoading ? (
                 <div className="flex items-center justify-center h-32">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                 </div>
               ) : (
                 <>
@@ -187,14 +187,14 @@ export function ProfileModal({
                   >
                     <div className="relative w-48 h-48 mb-4">
                       {/* QR Code Background */}
-                      <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-lg p-4">
-                        <div className="w-full h-full border-2 border-purple-500/30 rounded-lg"></div>
+                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-lg p-4">
+                        <div className="w-full h-full border-2 border-blue-500/30 rounded-lg"></div>
                       </div>
                       {/* Center User Photo */}
                       <div className="absolute inset-0 flex items-center justify-center">
                         <motion.div 
                           key={`avatar-${displayUsername}`}
-                          className="w-16 h-16 bg-purple-500 rounded-full flex items-center justify-center text-xl"
+                          className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-xl"
                           initial={{ scale: 0.8 }}
                           animate={{ scale: 1 }}
                           transition={{ type: "spring", bounce: 0.5 }}
@@ -223,24 +223,24 @@ export function ProfileModal({
 
                   <div className="mt-6 space-y-4">
                     <button 
-                      className="w-full p-4 rounded-lg bg-zinc-900 text-left"
+                      className="w-full p-4 rounded-lg bg-black/40 backdrop-blur-md border border-blue-500/20 hover:bg-blue-600/10 transition-colors text-left"
                       onClick={handleInviteFriendsClick}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
-                          <Users className="h-5 w-5" />
+                        <div className="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center">
+                          <Users className="h-5 w-5 text-blue-400" />
                         </div>
                         <span>Invite friends</span>
                       </div>
                     </button>
 
                     <button 
-                      className="w-full p-4 rounded-lg bg-zinc-900 text-left"
+                      className="w-full p-4 rounded-lg bg-black/40 backdrop-blur-md border border-blue-500/20 hover:bg-blue-600/10 transition-colors text-left"
                       onClick={handleAccountSettingsClick}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
-                          <Settings className="h-5 w-5" />
+                        <div className="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center">
+                          <Settings className="h-5 w-5 text-blue-400" />
                         </div>
                         <div className="flex-1">
                           <p>Account</p>
@@ -250,12 +250,12 @@ export function ProfileModal({
                     </button>
 
                     <button 
-                      className="w-full p-4 rounded-lg bg-zinc-900 text-left"
+                      className="w-full p-4 rounded-lg bg-black/40 backdrop-blur-md border border-blue-500/20 hover:bg-blue-600/10 transition-colors text-left"
                       onClick={handleDocumentsClick}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
-                          <MessageSquare className="h-5 w-5" />
+                        <div className="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center">
+                          <MessageSquare className="h-5 w-5 text-blue-400" />
                         </div>
                         <span>Documents & statements</span>
                       </div>
@@ -320,7 +320,7 @@ function CreateAccountForm() {
             {['Personal', 'Business'].map((type) => (
               <button
                 key={type}
-                className="p-4 rounded-lg bg-zinc-800 hover:bg-zinc-700 transition-colors"
+                className="p-4 rounded-lg bg-black/40 backdrop-blur-md border border-blue-500/20 hover:bg-blue-600/10 transition-colors"
                 onClick={() => handleAccountTypeSelect(type)}
               >
                 {type}
@@ -333,7 +333,7 @@ function CreateAccountForm() {
           <label className="text-sm text-zinc-400">Account Name</label>
           <input
             type="text"
-            className="w-full p-3 rounded-lg bg-zinc-800 outline-none"
+            className="w-full p-3 rounded-lg bg-black/40 backdrop-blur-md border border-blue-500/20 focus:border-blue-500 outline-none transition-colors"
             placeholder="Enter account name"
             onChange={handleNameChange}
           />
@@ -343,7 +343,7 @@ function CreateAccountForm() {
           <label className="text-sm text-zinc-400">Username</label>
           <input
             type="text"
-            className="w-full p-3 rounded-lg bg-zinc-800 outline-none"
+            className="w-full p-3 rounded-lg bg-black/40 backdrop-blur-md border border-blue-500/20 focus:border-blue-500 outline-none transition-colors"
             placeholder="@username"
             onChange={handleUsernameChange}
           />
