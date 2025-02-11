@@ -16,6 +16,7 @@ import type {
 import type * as accounts from "../accounts.js";
 import type * as activityLogs from "../activityLogs.js";
 import type * as contacts from "../contacts.js";
+import type * as conversations from "../conversations.js";
 import type * as getUserIds from "../getUserIds.js";
 import type * as init from "../init.js";
 import type * as insights from "../insights.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   accounts: typeof accounts;
   activityLogs: typeof activityLogs;
   contacts: typeof contacts;
+  conversations: typeof conversations;
   getUserIds: typeof getUserIds;
   init: typeof init;
   insights: typeof insights;

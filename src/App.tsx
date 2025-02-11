@@ -45,7 +45,7 @@ const App = () => {
               <Route path="/split/:id" element={<Send />} />
               <Route path="/amount/:id" element={<Amount />} />
               <Route path="/messages" element={<Messages />} />
-              <Route path="/messages/:id" element={<MessageDetail />} />
+              <Route path="/messages/:id" element={<Message />} />
               <Route path="/payment-failed" element={<PaymentFailed />} />
               
               {/* Catch all route */}

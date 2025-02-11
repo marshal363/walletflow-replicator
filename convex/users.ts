@@ -258,4 +258,155 @@ export const getUserMappings = query({
       username: user.username
     }));
   },
+});
+
+export const searchUsers = query({
+  args: {
+    query: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const currentUser = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("clerkId"), identity.subject))
+      .first();
+    
+    if (!currentUser) throw new Error("User not found");
+
+    const searchQuery = args.query.toLowerCase();
+
+    // Search by username, full name, or email
+    const users = await ctx.db
+      .query("users")
+      .filter((q) => 
+        q.and(
+          // Don't include current user
+          q.neq(q.field("_id"), currentUser._id),
+          // Only active users
+          q.eq(q.field("status"), "active"),
+          // Search across multiple fields
+          q.or(
+            // Username search
+            q.and(
+              q.neq(q.field("username"), null),
+              q.gte(q.field("username"), searchQuery),
+              q.lt(q.field("username"), searchQuery + "\uffff")
+            ),
+            // Full name search
+            q.and(
+              q.neq(q.field("fullName"), null),
+              q.gte(q.field("fullName"), searchQuery),
+              q.lt(q.field("fullName"), searchQuery + "\uffff")
+            ),
+            // Email search
+            q.and(
+              q.neq(q.field("email"), null),
+              q.gte(q.field("email"), searchQuery),
+              q.lt(q.field("email"), searchQuery + "\uffff")
+            )
+          )
+        )
+      )
+      .take(10);
+
+    return users.map(user => ({
+      _id: user._id,
+      fullName: user.fullName,
+      username: user.username,
+      profileImageUrl: user.profileImageUrl,
+      email: user.email,
+    }));
+  },
+});
+
+const debug = {
+  log: (ctx: any, message: string, data?: any) => {
+    const timestamp = new Date().toISOString();
+    console.log(`[Convex:Users] ${message}`, {
+      ...data,
+      timestamp,
+    });
+  },
+  error: (ctx: any, message: string, error?: any) => {
+    const timestamp = new Date().toISOString();
+    console.error(`[Convex:Users:Error] ${message}`, {
+      error,
+      timestamp,
+    });
+  }
+};
+
+// Get other participant in a conversation
+export const getOtherParticipant = query({
+  args: {
+    conversationId: v.id("conversations"),
+  },
+  handler: async (ctx, args) => {
+    try {
+      debug.log(ctx, "Getting other participant", { conversationId: args.conversationId });
+
+      const identity = await ctx.auth.getUserIdentity();
+      if (!identity) throw new Error("Not authenticated");
+
+      // Get current user
+      const currentUser = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id")
+        .filter((q) => q.eq(q.field("clerkId"), identity.subject))
+        .unique();
+      
+      if (!currentUser) throw new Error("User not found");
+
+      debug.log(ctx, "Current user found", { userId: currentUser._id });
+
+      // Get conversation
+      const conversation = await ctx.db.get(args.conversationId);
+      if (!conversation) {
+        debug.error(ctx, "Conversation not found", { conversationId: args.conversationId });
+        throw new Error("Conversation not found");
+      }
+
+      debug.log(ctx, "Conversation found", { 
+        participants: conversation.participants,
+        isGroup: conversation.metadata.isGroup
+      });
+
+      // Find other participant
+      const otherParticipantId = conversation.participants.find(
+        (id) => id !== currentUser._id
+      );
+
+      if (!otherParticipantId) {
+        debug.error(ctx, "Other participant not found in conversation");
+        throw new Error("Other participant not found");
+      }
+
+      // Get other participant's details
+      const otherParticipant = await ctx.db.get(otherParticipantId);
+      if (!otherParticipant) {
+        debug.error(ctx, "Other participant details not found", { 
+          participantId: otherParticipantId 
+        });
+        throw new Error("Other participant details not found");
+      }
+
+      debug.log(ctx, "Other participant found", { 
+        username: otherParticipant.username,
+        fullName: otherParticipant.fullName
+      });
+
+      return {
+        _id: otherParticipant._id,
+        fullName: otherParticipant.fullName,
+        username: otherParticipant.username ?? "",
+        profileImageUrl: otherParticipant.profileImageUrl,
+        status: otherParticipant.status,
+      };
+    } catch (error) {
+      debug.error(ctx, "Error in getOtherParticipant", error);
+      throw error;
+    }
+  },
 }); 

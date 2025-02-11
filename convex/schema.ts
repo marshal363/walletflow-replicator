@@ -149,10 +149,39 @@ export default defineSchema({
   .index("by_timestamp", ["timestamp"])
   .index("by_wallet_and_timestamp", ["walletId", "timestamp"]),
 
+  // Conversations table
+  conversations: defineTable({
+    participants: v.array(v.id("users")),
+    lastMessageId: v.optional(v.id("messages")),
+    lastMessageAt: v.string(),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("archived"),
+      v.literal("blocked")
+    ),
+    metadata: v.object({
+      name: v.optional(v.string()),
+      isGroup: v.boolean(),
+      createdBy: v.id("users"),
+    }),
+  })
+  .index("by_participants", ["participants"])
+  .index("by_updated", ["updatedAt"])
+  .index("by_status", ["status"]),
+
   // Messages table
   messages: defineTable({
+    conversationId: v.id("conversations"),
     senderId: v.id("users"),
-    receiverId: v.id("users"),
+    content: v.string(),
+    timestamp: v.string(),
+    status: v.union(
+      v.literal("sent"),
+      v.literal("delivered"),
+      v.literal("read")
+    ),
     type: v.union(
       v.literal("text"),
       v.literal("payment_request"),
@@ -160,50 +189,40 @@ export default defineSchema({
       v.literal("payment_received"),
       v.literal("system")
     ),
-    content: v.string(),
-    status: v.union(
-      v.literal("sent"),
-      v.literal("delivered"),
-      v.literal("read")
-    ),
     metadata: v.object({
-      // Nostr-specific fields
-      nostrEventId: v.optional(v.string()),
-      nostrPubkey: v.optional(v.string()),
-      nostrRelays: v.optional(v.array(v.string())),
-      
-      // Payment-related fields
-      paymentAmount: v.optional(v.number()),
-      paymentCurrency: v.optional(v.string()),
-      paymentStatus: v.optional(v.union(
-        v.literal("pending"),
-        v.literal("completed"),
-        v.literal("expired"),
-        v.literal("cancelled")
-      )),
-      paymentType: v.optional(v.union(
-        v.literal("lightning"),
-        v.literal("onchain")
-      )),
-      paymentRequest: v.optional(v.string()), // Lightning invoice or BTC address
-      
-      // Message context
       replyTo: v.optional(v.id("messages")),
       attachments: v.optional(v.array(v.string())),
       reactions: v.optional(v.array(v.object({
-        emoji: v.string(),
         userId: v.id("users"),
-        timestamp: v.string()
+        type: v.string()
       }))),
     }),
-    timestamp: v.string(),
-    expiresAt: v.optional(v.string()), // For payment requests
   })
+  .index("by_conversation", ["conversationId"])
   .index("by_sender", ["senderId"])
-  .index("by_receiver", ["receiverId"])
-  .index("by_conversation", ["senderId", "receiverId"])
-  .index("by_nostr_event", ["metadata.nostrEventId"])
-  .index("by_payment_status", ["metadata.paymentStatus"]),
+  .index("by_timestamp", ["timestamp"]),
+
+  // Conversation Participants table
+  conversationParticipants: defineTable({
+    conversationId: v.id("conversations"),
+    userId: v.id("users"),
+    joinedAt: v.string(),
+    role: v.union(
+      v.literal("admin"),
+      v.literal("member")
+    ),
+    lastReadMessageId: v.optional(v.id("messages")),
+    lastReadAt: v.optional(v.string()),
+    isArchived: v.boolean(),
+    isMuted: v.boolean(),
+    notificationPreferences: v.object({
+      mentions: v.boolean(),
+      all: v.boolean()
+    }),
+  })
+  .index("by_user", ["userId"])
+  .index("by_conversation_user", ["conversationId", "userId"])
+  .index("by_unread", ["lastReadAt"]),
 
   // Payment Requests table
   paymentRequests: defineTable({

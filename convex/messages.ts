@@ -1,135 +1,335 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { GenericQueryCtx, GenericMutationCtx } from "./_generated/server";
 
-// Get messages for a conversation between two users
-export const getConversation = query({
+// Debug logger that accepts both query and mutation contexts
+const debug = {
+  log: (message: string, data?: Record<string, unknown>) => {
+    console.log(`[Convex:Messages] ${message}`, {
+      ...data,
+      timestamp: new Date().toISOString(),
+    });
+  },
+  error: (message: string, error?: unknown) => {
+    console.error(`[Convex:Messages:Error] ${message}`, {
+      error,
+      timestamp: new Date().toISOString(),
+    });
+  }
+};
+
+// Get recent conversations for the current user
+export const getRecentConversations = query({
   args: {
-    userId1: v.id("users"),
-    userId2: v.id("users"),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const messages = await ctx.db
-      .query("messages")
-      .withIndex("by_conversation", (q) =>
-        q.eq("senderId", args.userId1).eq("receiverId", args.userId2)
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const userId = identity.subject;
+    const limit = args.limit ?? 20;
+
+    // Get user record
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id")
+      .filter((q) => q.eq(q.field("clerkId"), userId))
+      .unique();
+
+    if (!user) throw new Error("User not found");
+
+    // Get conversations where user is a participant
+    const conversations = await ctx.db
+      .query("conversations")
+      .withIndex("by_participants")
+      .filter((q) => 
+        q.and(
+          q.eq(q.field("metadata.isGroup"), false),
+          q.eq(q.field("status"), "active")
+        )
       )
       .order("desc")
-      .take(args.limit ?? 50);
+      .take(limit * 2);
 
-    const otherMessages = await ctx.db
-      .query("messages")
-      .withIndex("by_conversation", (q) =>
-        q.eq("senderId", args.userId2).eq("receiverId", args.userId1)
-      )
-      .order("desc")
-      .take(args.limit ?? 50);
-
-    return [...messages, ...otherMessages].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    // Filter conversations where user is a participant
+    const userConversations = conversations.filter(conversation => 
+      conversation.participants.includes(user._id)
     );
+
+    // Get conversation details
+    const conversationDetails = await Promise.all(
+      userConversations.slice(0, limit).map(async (conversation) => {
+        // Get other participant
+        const otherParticipantId = conversation.participants.find(
+          (id) => id !== user._id
+        );
+        if (!otherParticipantId) return null;
+
+        const otherUser = await ctx.db.get(otherParticipantId);
+        if (!otherUser) return null;
+
+        // Get last message
+        const lastMessage = conversation.lastMessageId
+          ? await ctx.db.get(conversation.lastMessageId)
+          : null;
+
+        // Get unread count
+        const unreadCount = await ctx.db
+          .query("messages")
+          .withIndex("by_conversation")
+          .filter((q) =>
+            q.and(
+              q.eq(q.field("conversationId"), conversation._id),
+              q.eq(q.field("status"), "delivered"),
+              q.eq(q.field("senderId"), otherParticipantId)
+            )
+          )
+          .collect()
+          .then((messages) => messages.length);
+
+        return {
+          _id: conversation._id,
+          sender: {
+            _id: otherUser._id,
+            fullName: otherUser.fullName,
+            username: otherUser.username ?? "",
+            profileImageUrl: otherUser.profileImageUrl,
+          },
+          lastMessage: lastMessage
+            ? {
+                content: lastMessage.content,
+                timestamp: lastMessage.timestamp,
+                status: lastMessage.status,
+              }
+            : null,
+          unreadCount,
+        };
+      })
+    );
+
+    return conversationDetails.filter((c): c is NonNullable<typeof c> => c !== null);
   },
 });
 
-// Get all conversations for a user
-export const getConversationList = query({
-  args: { userId: v.id("users") },
+// Get messages for a conversation
+export const getMessages = query({
+  args: {
+    conversationId: v.id("conversations"),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
-    const sentMessages = await ctx.db
-      .query("messages")
-      .withIndex("by_sender", (q) => q.eq("senderId", args.userId))
-      .collect();
+    try {
+      debug.log("Fetching messages", { 
+        conversationId: args.conversationId,
+        limit: args.limit,
+        cursor: args.cursor 
+      });
 
-    const receivedMessages = await ctx.db
-      .query("messages")
-      .withIndex("by_receiver", (q) => q.eq("receiverId", args.userId))
-      .collect();
+      const identity = await ctx.auth.getUserIdentity();
+      if (!identity) throw new Error("Not authenticated");
 
-    const conversations = new Map();
-    
-    [...sentMessages, ...receivedMessages].forEach((msg) => {
-      const otherId = msg.senderId === args.userId ? msg.receiverId : msg.senderId;
-      if (!conversations.has(otherId) || 
-          new Date(conversations.get(otherId).timestamp) < new Date(msg.timestamp)) {
-        conversations.set(otherId, msg);
+      // Get current user
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id")
+        .filter((q) => q.eq(q.field("clerkId"), identity.subject))
+        .unique();
+      
+      if (!user) throw new Error("User not found");
+
+      debug.log("Current user found", { userId: user._id });
+
+      // Verify user is part of conversation
+      const conversation = await ctx.db.get(args.conversationId);
+      if (!conversation) {
+        debug.error("Conversation not found", { conversationId: args.conversationId });
+        throw new Error("Conversation not found");
       }
-    });
 
-    return Array.from(conversations.values());
+      if (!conversation.participants.includes(user._id)) {
+        debug.error("User not in conversation", { 
+          userId: user._id,
+          conversationId: args.conversationId 
+        });
+        throw new Error("Not authorized to view this conversation");
+      }
+
+      // Query messages
+      const messages = await ctx.db
+        .query("messages")
+        .withIndex("by_conversation")
+        .filter((q) => q.eq(q.field("conversationId"), args.conversationId))
+        .order("desc")
+        .take(args.limit ?? 50);
+
+      debug.log("Messages fetched", { 
+        conversationId: args.conversationId,
+        count: messages.length 
+      });
+
+      return {
+        messages: messages.reverse(),
+        nextCursor: messages.length === (args.limit ?? 50) 
+          ? messages[messages.length - 1].timestamp 
+          : null,
+      };
+    } catch (error) {
+      debug.error("Error fetching messages", error);
+      throw error;
+    }
   },
 });
 
 // Send a new message
 export const sendMessage = mutation({
   args: {
-    senderId: v.id("users"),
-    receiverId: v.id("users"),
+    conversationId: v.id("conversations"),
+    content: v.string(),
     type: v.union(
       v.literal("text"),
       v.literal("payment_request"),
       v.literal("payment_sent"),
-      v.literal("payment_received")
-    ),
-    content: v.string(),
-    metadata: v.optional(
-      v.object({
-        paymentAmount: v.optional(v.number()),
-        paymentCurrency: v.optional(v.string()),
-        paymentStatus: v.optional(
-          v.union(
-            v.literal("pending"),
-            v.literal("completed"),
-            v.literal("expired"),
-            v.literal("cancelled")
-          )
-        ),
-        attachments: v.optional(v.array(v.string())),
-      })
+      v.literal("payment_received"),
+      v.literal("system")
     ),
   },
   handler: async (ctx, args) => {
-    const message = await ctx.db.insert("messages", {
-      senderId: args.senderId,
-      receiverId: args.receiverId,
-      type: args.type,
-      content: args.content,
-      status: "sent",
-      metadata: args.metadata,
-      timestamp: new Date().toISOString(),
-    });
+    try {
+      debug.log("Sending message", { 
+        conversationId: args.conversationId,
+        type: args.type,
+        contentLength: args.content.length 
+      });
 
-    // Create a notification for the receiver
-    await ctx.db.insert("notifications", {
-      userId: args.receiverId,
-      type: "message",
-      title: "New Message",
-      content: `You have a new ${args.type} message`,
-      status: "unread",
-      metadata: {
-        relatedId: message,
-        priority: args.type === "payment_request" ? "high" : "medium",
-      },
-      createdAt: new Date().toISOString(),
-    });
+      const identity = await ctx.auth.getUserIdentity();
+      if (!identity) throw new Error("Not authenticated");
 
-    return message;
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id")
+        .filter((q) => q.eq(q.field("clerkId"), identity.subject))
+        .unique();
+      
+      if (!user) throw new Error("User not found");
+
+      debug.log("Sender found", { userId: user._id });
+
+      // Validate conversation exists and user is participant
+      const conversation = await ctx.db.get(args.conversationId);
+      if (!conversation) {
+        debug.error("Conversation not found", { conversationId: args.conversationId });
+        throw new Error("Conversation not found");
+      }
+
+      if (!conversation.participants.includes(user._id)) {
+        debug.error("User not in conversation", { 
+          userId: user._id,
+          conversationId: args.conversationId 
+        });
+        throw new Error("Not authorized to send messages in this conversation");
+      }
+
+      // Create message
+      const message = await ctx.db.insert("messages", {
+        conversationId: args.conversationId,
+        senderId: user._id,
+        content: args.content,
+        type: args.type,
+        status: "sent",
+        timestamp: new Date().toISOString(),
+        metadata: {
+          replyTo: undefined,
+          attachments: undefined,
+          reactions: undefined,
+        },
+      });
+
+      debug.log("Message created", { messageId: message });
+
+      // Update conversation with last message info
+      await ctx.db.patch(args.conversationId, {
+        lastMessageId: message,
+        lastMessageAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      debug.log("Conversation updated", { 
+        conversationId: args.conversationId,
+        lastMessageId: message
+      });
+
+      return message;
+    } catch (error) {
+      debug.error("Error sending message", error);
+      throw error;
+    }
   },
 });
 
-// Update message status
-export const updateMessageStatus = mutation({
+// Mark messages as read
+export const markMessagesAsRead = mutation({
   args: {
-    messageId: v.id("messages"),
-    status: v.union(
-      v.literal("sent"),
-      v.literal("delivered"),
-      v.literal("read")
-    ),
+    messageIds: v.array(v.id("messages")),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.patch(args.messageId, {
-      status: args.status,
-    });
+    try {
+      debug.log("Marking messages as read", { 
+        messageIds: args.messageIds 
+      });
+
+      const identity = await ctx.auth.getUserIdentity();
+      if (!identity) throw new Error("Not authenticated");
+
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id")
+        .filter((q) => q.eq(q.field("clerkId"), identity.subject))
+        .unique();
+      
+      if (!user) throw new Error("User not found");
+
+      debug.log("User found", { userId: user._id });
+
+      // Update all messages
+      const updates = await Promise.all(
+        args.messageIds.map(async (messageId) => {
+          const message = await ctx.db.get(messageId);
+          if (!message) {
+            debug.error("Message not found", { messageId });
+            return null;
+          }
+
+          // Only mark as read if user is a participant
+          const conversation = await ctx.db.get(message.conversationId);
+          if (!conversation || !conversation.participants.includes(user._id)) {
+            debug.error("User not in conversation", { 
+              userId: user._id,
+              conversationId: message.conversationId 
+            });
+            return null;
+          }
+
+          await ctx.db.patch(messageId, {
+            status: "read",
+          });
+
+          return messageId;
+        })
+      );
+
+      const successfulUpdates = updates.filter((id): id is Id<"messages"> => id !== null);
+      debug.log("Messages marked as read", { 
+        updated: successfulUpdates.length,
+        total: args.messageIds.length 
+      });
+
+      return successfulUpdates;
+    } catch (error) {
+      debug.error("Error marking messages as read", error);
+      throw error;
+    }
   },
 }); 
