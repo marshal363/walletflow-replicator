@@ -37,12 +37,13 @@ export default function Home() {
   const selectedAccount = accounts?.find(account => account._id === currentAccountId);
 
   return (
-    <div className="min-h-screen">
-      <main className="pb-20">
-        <div className="space-y-6 py-4">
-          <div className="flex items-center justify-between px-4">
+    <div className="min-h-screen bg-black text-white">
+      <div className="sticky top-0 z-50">
+        <div className="absolute inset-0 bg-gradient-to-b from-black/95 via-black/90 to-transparent" />
+        <div className="relative z-10">
+          <div className="flex items-center justify-between p-4 border-b border-zinc-800/50 bg-black/40 backdrop-blur-md">
             <div 
-              className="flex items-center space-x-2 cursor-pointer"
+              className="flex items-center gap-3 cursor-pointer"
               onClick={() => setShowProfileModal(true)}
             >
               <UserButton />
@@ -54,24 +55,32 @@ export default function Home() {
                   </div>
                 ) : selectedAccount ? (
                   <>
-                    <p className="font-medium">{selectedAccount.name}</p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="font-semibold text-white">{selectedAccount.name}</p>
+                    <p className="text-sm text-zinc-400">
                       @{selectedAccount.identitySettings?.username || 'username'}
                     </p>
                   </>
                 ) : (
                   <>
-                    <p className="font-medium text-muted-foreground">No Account Selected</p>
-                    <p className="text-sm text-muted-foreground">Click to set up</p>
+                    <p className="font-semibold text-zinc-400">No Account Selected</p>
+                    <p className="text-sm text-zinc-500">Click to set up</p>
                   </>
                 )}
               </div>
             </div>
-            <Button variant="ghost" size="icon">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              className="hover:bg-zinc-800/50 transition-colors"
+            >
               <Search className="h-5 w-5" />
             </Button>
           </div>
+        </div>
+      </div>
 
+      <main className="pb-20">
+        <div className="space-y-6 py-4">
           <HomeWidgets
             selectedWalletId={selectedWallet}
             onWalletSelect={setSelectedWallet}
