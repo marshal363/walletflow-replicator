@@ -9,7 +9,6 @@ import Send from "./pages/Send";
 import Amount from "./pages/Amount";
 import Message from "./pages/Message";
 import Messages from "./pages/Messages";
-import MessageDetail from "./pages/MessageDetail";
 import PaymentFailed from "./pages/PaymentFailed";
 import Wallet from "./pages/Wallet";
 import SignInPage from "./pages/SignIn";
@@ -17,6 +16,7 @@ import SignUpPage from "./pages/SignUp";
 import AuthProvider from "./components/AuthProvider";
 import AddWallet from "./pages/AddWallet";
 import MultisigSetup from "./pages/MultisigSetup";
+import SyncUserWithConvex from "./components/SyncUSerWithCOnvex";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +28,7 @@ const App = () => {
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
+            <SyncUserWithConvex />
             <Routes>
               {/* Public routes */}
               <Route path="/" element={<Home />} />

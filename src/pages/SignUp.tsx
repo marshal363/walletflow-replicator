@@ -5,9 +5,6 @@ const SignUpPage = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="max-w-md w-full">
         <SignUp
-          routing="path"
-          path="/sign-up"
-          signInUrl="/sign-in"
           afterSignUpUrl="/wallet"
           redirectUrl="/wallet"
         />

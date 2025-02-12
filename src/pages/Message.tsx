@@ -214,15 +214,15 @@ const Message = () => {
     if (msg.type === 'payment_sent' || msg.type === 'payment_received') {
       return (
         <div className="flex items-center gap-2">
-          <span className="text-sm">{msg.type === 'payment_sent' ? 'You sent' : 'Received'}</span>
-          <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full">
+          <span className="text-base">{msg.type === 'payment_sent' ? 'You sent' : 'Received'}</span>
+          <span className="text-sm bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full">
             {msg.content} BTC
           </span>
         </div>
       );
     }
 
-    return <span className="text-sm">{msg.content}</span>;
+    return <span className="text-base">{msg.content}</span>;
   };
 
   if (!conversationId) {
@@ -306,7 +306,7 @@ const Message = () => {
                       "max-w-[280px]",
                       msg.type === "payment_request" ? "w-[280px]" : "max-w-[85%]",
                       msg.type === "text" && msg.senderId === otherParticipant._id ? "bg-zinc-800" : "bg-blue-600",
-                      msg.type !== "payment_request" && "rounded-2xl px-4 py-2.5"
+                      msg.type !== "payment_request" && "rounded-2xl px-5 py-3"
                     )}>
                       {renderMessage(msg as Message)}
                     </div>
