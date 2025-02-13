@@ -66,6 +66,30 @@ const Messages = () => {
 
   // Get or create conversation mutation
   const getOrCreateConversation = useMutation(api.conversations.getOrCreateConversation);
+  const markAsRead = useMutation(api.messages.markMessagesAsRead);
+  const markAsDelivered = useMutation(api.messages.markMessagesAsDelivered);
+
+  // Mark messages as delivered when conversations load
+  React.useEffect(() => {
+    if (conversations) {
+      debug.log('Marking messages as delivered for conversations', { 
+        count: conversations.length,
+        conversationIds: conversations.map(c => c._id)
+      });
+
+      conversations.forEach(async (conversation) => {
+        try {
+          await markAsDelivered({ conversationId: conversation._id });
+          debug.log('Marked messages as delivered', { conversationId: conversation._id });
+        } catch (error) {
+          debug.error('Failed to mark messages as delivered', {
+            conversationId: conversation._id,
+            error
+          });
+        }
+      });
+    }
+  }, [conversations, markAsDelivered]);
 
   // Handle user selection from search
   const handleUserSelect = useCallback(async (userId: string) => {
@@ -96,10 +120,22 @@ const Messages = () => {
   }, [getOrCreateConversation, navigate, searchQuery]);
 
   // Handle conversation selection
-  const handleConversationSelect = useCallback((conversationId: string) => {
+  const handleConversationSelect = useCallback(async (conversationId: string) => {
     debug.log('Starting conversation selection', { conversationId });
-    navigate(`/messages/${conversationId}`);
-  }, [navigate]);
+    
+    try {
+      // Mark messages as read
+      await markAsRead({ conversationId });
+      debug.log('Marked messages as read', { conversationId });
+      
+      // Navigate to conversation
+      navigate(`/messages/${conversationId}`);
+    } catch (error) {
+      debug.error('Error marking messages as read:', error);
+      // Still navigate even if marking as read fails
+      navigate(`/messages/${conversationId}`);
+    }
+  }, [navigate, markAsRead]);
 
   // Handle search input
   const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -183,18 +219,26 @@ const Messages = () => {
           </div>
         ) : (
           <div className="divide-y divide-zinc-800/50">
-            {displayItems?.map((item) => (
-              <button
-                key={item._id}
-                onClick={() => 
-                  isSearching 
-                    ? handleUserSelect(item._id)
-                    : handleConversationSelect(item._id)
-                }
-                className="w-full p-4 flex items-center space-x-4 hover:bg-zinc-900/50 transition-colors"
-              >
-                <div className="relative">
-                  <Avatar className="h-12 w-12 bg-blue-600 flex items-center justify-center text-lg font-medium">
+            {displayItems?.map((item) => {
+              // Debug log for each item
+              debug.log('Rendering conversation item', {
+                id: item._id,
+                sender: item.sender?.username,
+                unreadCount: item.unreadCount,
+                lastMessage: item.lastMessage?.content
+              });
+
+              return (
+                <button
+                  key={item._id}
+                  onClick={() => 
+                    isSearching 
+                      ? handleUserSelect(item._id)
+                      : handleConversationSelect(item._id)
+                  }
+                  className="w-full p-4 flex items-start space-x-4 hover:bg-zinc-900/50 transition-colors"
+                >
+                  <Avatar className="h-12 w-12 bg-blue-600 flex-shrink-0 flex items-center justify-center text-lg font-medium">
                     {item.sender?.profileImageUrl ? (
                       <img 
                         src={item.sender.profileImageUrl} 
@@ -202,49 +246,51 @@ const Messages = () => {
                         className="w-full h-full object-cover rounded-full"
                       />
                     ) : (
-                      <span>{item.sender?.fullName.charAt(0)}</span>
+                      <span className="uppercase">{item.sender?.fullName.charAt(0)}</span>
                     )}
                   </Avatar>
-                </div>
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-start mb-1">
-                    <div>
-                      <h3 className="font-medium text-white">
-                        {isSearching ? item.fullName : item.sender?.fullName}
-                      </h3>
-                      <p className="text-sm text-zinc-400">
-                        @{isSearching ? item.username : item.sender?.username}
-                      </p>
-                    </div>
-                    {!isSearching && item.lastMessage && (
-                      <span className="text-xs text-zinc-400 flex-shrink-0">
-                        {new Date(item.lastMessage.timestamp).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                    )}
-                  </div>
-                  
-                  {!isSearching && (
-                    <div className="flex justify-between items-end">
-                      <p className="text-sm text-zinc-400 truncate pr-4">
-                        {item.lastMessage?.content ?? "No messages yet"}
-                      </p>
-                      {item.unreadCount > 0 && (
-                        <div className={cn(
-                          "min-w-[20px] h-5 px-1.5 flex items-center justify-center",
-                          "bg-blue-500 rounded-full text-xs font-medium"
-                        )}>
-                          {item.unreadCount}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start mb-0.5">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-white">
+                            {isSearching ? item.fullName : item.sender?.fullName}
+                          </h3>
+                          {!isSearching && item.unreadCount > 0 && (
+                            <div className="w-2 h-2 rounded-full bg-green-500"/>
+                          )}
                         </div>
+                        <p className="text-sm text-zinc-400 -mt-0.5">
+                          @{isSearching ? item.username : item.sender?.username}
+                        </p>
+                      </div>
+                      {!isSearching && item.lastMessage && (
+                        <span className="text-xs text-zinc-500 flex-shrink-0">
+                          {new Date(item.lastMessage.timestamp).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
                       )}
                     </div>
-                  )}
-                </div>
-              </button>
-            ))}
+                    
+                    {!isSearching && (
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-zinc-400 truncate">
+                          {item.lastMessage?.content ?? "No messages yet"}
+                        </p>
+                        {item.unreadCount > 0 && (
+                          <div className="min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-blue-500 rounded-full text-[11px] font-medium text-white flex-shrink-0">
+                            {item.unreadCount}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </ScrollArea>

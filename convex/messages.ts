@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
-import { GenericQueryCtx, GenericMutationCtx } from "./_generated/server";
 
 // Debug logger that accepts both query and mutation contexts
 const debug = {
@@ -269,15 +268,15 @@ export const sendMessage = mutation({
   },
 });
 
-// Mark messages as read
-export const markMessagesAsRead = mutation({
+// Mark messages as delivered
+export const markMessagesAsDelivered = mutation({
   args: {
-    messageIds: v.array(v.id("messages")),
+    conversationId: v.id("conversations"),
   },
   handler: async (ctx, args) => {
     try {
-      debug.log("Marking messages as read", { 
-        messageIds: args.messageIds 
+      debug.log("Starting to mark messages as delivered", { 
+        conversationId: args.conversationId 
       });
 
       const identity = await ctx.auth.getUserIdentity();
@@ -293,40 +292,150 @@ export const markMessagesAsRead = mutation({
 
       debug.log("User found", { userId: user._id });
 
-      // Update all messages
+      // Verify user is part of conversation
+      const conversation = await ctx.db.get(args.conversationId);
+      if (!conversation) {
+        debug.error("Conversation not found", { conversationId: args.conversationId });
+        throw new Error("Conversation not found");
+      }
+
+      if (!conversation.participants.includes(user._id)) {
+        debug.error("User not in conversation", { 
+          userId: user._id,
+          conversationId: args.conversationId 
+        });
+        throw new Error("Not authorized to view this conversation");
+      }
+
+      // Get all sent messages from other participants
+      const sentMessages = await ctx.db
+        .query("messages")
+        .withIndex("by_conversation")
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("conversationId"), args.conversationId),
+            q.eq(q.field("status"), "sent"),
+            q.neq(q.field("senderId"), user._id)
+          )
+        )
+        .collect();
+
+      debug.log("Found sent messages", { count: sentMessages.length });
+
+      // Mark all messages as delivered
       const updates = await Promise.all(
-        args.messageIds.map(async (messageId) => {
-          const message = await ctx.db.get(messageId);
-          if (!message) {
-            debug.error("Message not found", { messageId });
-            return null;
-          }
-
-          // Only mark as read if user is a participant
-          const conversation = await ctx.db.get(message.conversationId);
-          if (!conversation || !conversation.participants.includes(user._id)) {
-            debug.error("User not in conversation", { 
-              userId: user._id,
-              conversationId: message.conversationId 
-            });
-            return null;
-          }
-
-          await ctx.db.patch(messageId, {
-            status: "read",
+        sentMessages.map(async (message) => {
+          await ctx.db.patch(message._id, {
+            status: "delivered"
           });
-
-          return messageId;
+          return message._id;
         })
       );
 
-      const successfulUpdates = updates.filter((id): id is Id<"messages"> => id !== null);
-      debug.log("Messages marked as read", { 
-        updated: successfulUpdates.length,
-        total: args.messageIds.length 
+      debug.log("Messages marked as delivered", { 
+        count: updates.length,
+        messageIds: updates 
       });
 
-      return successfulUpdates;
+      return updates;
+    } catch (error) {
+      debug.error("Error marking messages as delivered", error);
+      throw error;
+    }
+  },
+});
+
+// Mark messages as read
+export const markMessagesAsRead = mutation({
+  args: {
+    conversationId: v.id("conversations"),
+  },
+  handler: async (ctx, args) => {
+    try {
+      debug.log("Starting to mark messages as read", { 
+        conversationId: args.conversationId 
+      });
+
+      const identity = await ctx.auth.getUserIdentity();
+      if (!identity) throw new Error("Not authenticated");
+
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id")
+        .filter((q) => q.eq(q.field("clerkId"), identity.subject))
+        .unique();
+      
+      if (!user) throw new Error("User not found");
+
+      debug.log("User found", { userId: user._id });
+
+      // Verify user is part of conversation
+      const conversation = await ctx.db.get(args.conversationId);
+      if (!conversation) {
+        debug.error("Conversation not found", { conversationId: args.conversationId });
+        throw new Error("Conversation not found");
+      }
+
+      if (!conversation.participants.includes(user._id)) {
+        debug.error("User not in conversation", { 
+          userId: user._id,
+          conversationId: args.conversationId 
+        });
+        throw new Error("Not authorized to view this conversation");
+      }
+
+      // Get all unread messages from other participants
+      const unreadMessages = await ctx.db
+        .query("messages")
+        .withIndex("by_conversation")
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("conversationId"), args.conversationId),
+            q.eq(q.field("status"), "delivered"),
+            q.neq(q.field("senderId"), user._id)
+          )
+        )
+        .collect();
+
+      debug.log("Found unread messages", { count: unreadMessages.length });
+
+      // Mark all messages as read
+      const updates = await Promise.all(
+        unreadMessages.map(async (message) => {
+          await ctx.db.patch(message._id, {
+            status: "read"
+          });
+          return message._id;
+        })
+      );
+
+      // Update conversation participant's last read info
+      const now = new Date().toISOString();
+      await ctx.db
+        .query("conversationParticipants")
+        .withIndex("by_conversation_user")
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("conversationId"), args.conversationId),
+            q.eq(q.field("userId"), user._id)
+          )
+        )
+        .first()
+        .then(async (participant) => {
+          if (participant) {
+            await ctx.db.patch(participant._id, {
+              lastReadAt: now,
+              lastReadMessageId: conversation.lastMessageId
+            });
+          }
+        });
+
+      debug.log("Messages marked as read", { 
+        updated: updates.length,
+        conversationId: args.conversationId 
+      });
+
+      return updates;
     } catch (error) {
       debug.error("Error marking messages as read", error);
       throw error;
