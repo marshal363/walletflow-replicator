@@ -56,3 +56,21 @@
   border: 2px solid #F7931A;
   box-sizing: border-box;
 }
+
+@layer utilities {
+  .animate-slide-down {
+    animation: slide-down 0.5s ease-out;
+    transform-origin: top;
+  }
+}
+
+@keyframes slide-down {
+  0% {
+    opacity: 0.5;
+    transform: translateY(-100%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

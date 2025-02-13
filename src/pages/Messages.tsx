@@ -47,6 +47,7 @@ const Messages = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
+  const [animatingItems, setAnimatingItems] = useState<Set<string>>(new Set());
 
   debug.log('Component mounted/updated', {
     searchQuery,
@@ -58,6 +59,43 @@ const Messages = () => {
     limit: 50,
   });
   
+  // Sort conversations by unread count and timestamp
+  const sortedConversations = React.useMemo(() => {
+    if (!conversations) return [];
+    
+    return [...conversations].sort((a, b) => {
+      // First priority: unread count (higher first)
+      if (a.unreadCount !== b.unreadCount) {
+        return b.unreadCount - a.unreadCount;
+      }
+      // Second priority: last message timestamp (newer first)
+      const aTime = a.lastMessage?.timestamp ?? a._id;
+      const bTime = b.lastMessage?.timestamp ?? b._id;
+      return bTime.localeCompare(aTime);
+    });
+  }, [conversations]);
+
+  // Track conversation changes for animation
+  React.useEffect(() => {
+    if (!conversations) return;
+    
+    const newUnreadItems = new Set<string>();
+    conversations.forEach(conv => {
+      if (conv.unreadCount > 0) {
+        newUnreadItems.add(conv._id);
+      }
+    });
+
+    setAnimatingItems(newUnreadItems);
+    
+    // Clear animation classes after animation completes
+    const timer = setTimeout(() => {
+      setAnimatingItems(new Set());
+    }, 500); // Match this with CSS animation duration
+
+    return () => clearTimeout(timer);
+  }, [conversations]);
+
   // Search users when query exists
   const searchResults = useQuery(
     api.conversations.searchUsers,
@@ -149,7 +187,7 @@ const Messages = () => {
   }, [searchQuery]);
 
   // Determine what to display
-  const displayItems = debouncedSearch ? searchResults : conversations;
+  const displayItems = debouncedSearch ? searchResults : sortedConversations;
   const isSearching = debouncedSearch.length > 0;
 
   debug.log('Display state updated', {
@@ -220,14 +258,8 @@ const Messages = () => {
         ) : (
           <div className="divide-y divide-zinc-800/50">
             {displayItems?.map((item) => {
-              // Debug log for each item
-              debug.log('Rendering conversation item', {
-                id: item._id,
-                sender: item.sender?.username,
-                unreadCount: item.unreadCount,
-                lastMessage: item.lastMessage?.content
-              });
-
+              const isAnimating = animatingItems.has(item._id);
+              
               return (
                 <button
                   key={item._id}
@@ -236,7 +268,10 @@ const Messages = () => {
                       ? handleUserSelect(item._id)
                       : handleConversationSelect(item._id)
                   }
-                  className="w-full p-4 flex items-start space-x-4 hover:bg-zinc-900/50 transition-colors"
+                  className={cn(
+                    "w-full p-4 flex items-start space-x-4 hover:bg-zinc-900/50 transition-all duration-500 ease-in-out",
+                    isAnimating && "animate-slide-down bg-zinc-800/30"
+                  )}
                 >
                   <Avatar className="h-12 w-12 bg-blue-600 flex-shrink-0 flex items-center justify-center text-lg font-medium">
                     {item.sender?.profileImageUrl ? (
