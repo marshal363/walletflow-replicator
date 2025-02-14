@@ -64,8 +64,8 @@ const Amount = () => {
           title: "Transfer Successful",
           description: `${amount} sats sent to ${selectedUser?.fullName}`,
         });
-        // Navigate to message view after successful transfer
-        navigate(`/message/${id}`);
+        // Navigate to conversation view after successful transfer
+        navigate(`/conversation/${result.conversationId}`);
       }
     } catch (error) {
       toast({

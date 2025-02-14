@@ -224,6 +224,11 @@ export default defineSchema({
         userId: v.id("users"),
         type: v.string()
       }))),
+      // Payment-related metadata
+      amount: v.optional(v.number()),
+      recipientId: v.optional(v.id("users")),
+      senderId: v.optional(v.id("users")),
+      transferId: v.optional(v.id("transferTransactions")),
     }),
   })
   .index("by_conversation", ["conversationId"])
