@@ -25,7 +25,9 @@ import type * as notifications from "../notifications.js";
 import type * as paymentRequests from "../paymentRequests.js";
 import type * as testing from "../testing.js";
 import type * as transactions from "../transactions.js";
+import type * as transfers from "../transfers.js";
 import type * as users from "../users.js";
+import type * as utils_walletHelpers from "../utils/walletHelpers.js";
 import type * as wallets from "../wallets.js";
 
 /**
@@ -49,7 +51,9 @@ declare const fullApi: ApiFromModules<{
   paymentRequests: typeof paymentRequests;
   testing: typeof testing;
   transactions: typeof transactions;
+  transfers: typeof transfers;
   users: typeof users;
+  "utils/walletHelpers": typeof utils_walletHelpers;
   wallets: typeof wallets;
 }>;
 export declare const api: FilterApi<

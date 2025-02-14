@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { getOrCreateSpendingWallet } from "./utils/walletHelpers";
 
 export const getWallets = query({
   args: { accountId: v.id("accounts") },
@@ -381,4 +382,50 @@ function validateMultisigSetup(
       throw new Error("Multisig wallet requires at least 2 signers");
     }
   }
-} 
+}
+
+export const getCurrentUserSpendingWallet = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get user by clerk ID
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Find user's personal account and spending wallet
+    const account = await ctx.db
+      .query("accounts")
+      .withIndex("by_user_and_type", (q) => 
+        q.eq("userId", user._id).eq("type", "personal")
+      )
+      .first();
+
+    if (!account) {
+      throw new Error("Account not found");
+    }
+
+    // Get spending wallet
+    const wallet = await ctx.db
+      .query("wallets")
+      .withIndex("by_account_and_type", (q) =>
+        q.eq("accountId", account._id).eq("type", "spending")
+      )
+      .first();
+
+    if (!wallet) {
+      throw new Error("Spending wallet not found");
+    }
+
+    return wallet;
+  },
+}); 

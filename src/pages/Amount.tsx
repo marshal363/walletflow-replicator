@@ -4,18 +4,27 @@ import { NumPad } from "@/components/NumPad";
 import { ActionButton } from "@/components/ActionButton";
 import { Avatar } from "@/components/ui/avatar";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { Id } from "@convex/_generated/dataModel";
+import { useToast } from "@/components/ui/use-toast";
 
 const Amount = () => {
   const [amount, setAmount] = useState("0");
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { id } = useParams();
+  const { toast } = useToast();
 
   // Fetch user details directly using ID
   const user = useQuery(api.conversations.searchUsers, id ? { query: "" } : "skip");
   const selectedUser = user?.find(u => u._id === id);
+  
+  // Get current user's spending wallet
+  const currentUserWallet = useQuery(api.wallets.getCurrentUserSpendingWallet);
+  
+  // Transfer mutation
+  const transfer = useMutation(api.transfers.transferSats);
 
   const handleNumberPress = (num: string) => {
     if (amount === "0" && num !== ".") {
@@ -31,8 +40,48 @@ const Amount = () => {
     setAmount(prev => prev.length > 1 ? prev.slice(0, -1) : "0");
   };
 
+  const handleTransfer = async () => {
+    if (!currentUserWallet || !id) return;
+
+    setIsLoading(true);
+    try {
+      // Convert amount to number and validate
+      const amountInSats = parseFloat(amount);
+      if (isNaN(amountInSats) || amountInSats <= 0) {
+        throw new Error("Invalid amount");
+      }
+
+      // Perform the transfer
+      const result = await transfer({
+        sourceWalletId: currentUserWallet._id,
+        destinationUserId: id as Id<"users">,
+        amount: amountInSats,
+        description: `Transfer to ${selectedUser?.fullName || 'user'}`,
+      });
+
+      if (result.success) {
+        toast({
+          title: "Transfer Successful",
+          description: `${amount} sats sent to ${selectedUser?.fullName}`,
+        });
+        // Navigate to message view after successful transfer
+        navigate(`/message/${id}`);
+      }
+    } catch (error) {
+      toast({
+        title: "Transfer Failed",
+        description: error instanceof Error ? error.message : "An error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Calculate USD value (this is a placeholder - you should use a real BTC/USD rate)
   const usdAmount = parseFloat(amount) * 0.00043; // Example rate: 1 sat = $0.00043 USD
+
+  const isTransferDisabled = !currentUserWallet || amount === "0" || isLoading;
 
   return (
     <div className="min-h-screen flex flex-col bg-black text-white">
@@ -77,11 +126,11 @@ const Amount = () => {
             Cancel
           </ActionButton>
           <ActionButton
-            onClick={() => navigate(`/message/${id}`)}
-            disabled={amount === "0"}
+            onClick={handleTransfer}
+            disabled={isTransferDisabled}
             className="w-full bg-blue-600 hover:bg-blue-500 text-white disabled:bg-blue-600/50"
           >
-            Next
+            {isLoading ? "Sending..." : "Next"}
           </ActionButton>
         </div>
       </div>

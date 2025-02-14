@@ -149,6 +149,34 @@ export default defineSchema({
   .index("by_timestamp", ["timestamp"])
   .index("by_wallet_and_timestamp", ["walletId", "timestamp"]),
 
+  // TransferTransactions table - For internal wallet-to-wallet transfers
+  transferTransactions: defineTable({
+    sourceWalletId: v.id("wallets"),
+    destinationWalletId: v.id("wallets"),
+    amount: v.number(),
+    fee: v.number(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+    timestamp: v.string(),
+    description: v.string(),
+    type: v.literal("internal_transfer"),
+    metadata: v.object({
+      messageId: v.optional(v.id("messages")),
+      memo: v.optional(v.string()),
+      tags: v.array(v.string()),
+      processingAttempts: v.number(),
+      lastAttempt: v.optional(v.string()),
+      errorMessage: v.optional(v.string()),
+    }),
+  })
+  .index("by_source_wallet", ["sourceWalletId"])
+  .index("by_destination_wallet", ["destinationWalletId"])
+  .index("by_status", ["status"])
+  .index("by_timestamp", ["timestamp"]),
+
   // Conversations table
   conversations: defineTable({
     participants: v.array(v.id("users")),
