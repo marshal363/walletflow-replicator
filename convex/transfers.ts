@@ -215,6 +215,7 @@ export const transferSats = mutation({
           replyTo: undefined,
           attachments: undefined,
           reactions: undefined,
+          visibility: "sender_only"
         },
       });
 
@@ -244,6 +245,7 @@ export const transferSats = mutation({
           replyTo: undefined,
           attachments: undefined,
           reactions: undefined,
+          visibility: "recipient_only"
         },
       });
 

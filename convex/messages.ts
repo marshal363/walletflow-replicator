@@ -156,23 +156,49 @@ export const getMessages = query({
         throw new Error("Not authorized to view this conversation");
       }
 
-      // Query messages
+      // Query messages with visibility filtering
       const messages = await ctx.db
         .query("messages")
         .withIndex("by_conversation")
         .filter((q) => q.eq(q.field("conversationId"), args.conversationId))
-        .order("desc")
-        .take(args.limit ?? 50);
+        .collect();
 
-      debug.log("Messages fetched", { 
+      // Filter messages based on visibility and user role
+      const filteredMessages = messages.filter(message => {
+        // If message has no visibility setting or is set to "both", show it
+        if (!message.metadata.visibility || message.metadata.visibility === "both") {
+          return true;
+        }
+
+        // For payment messages, check visibility based on user role
+        if (message.type === "payment_sent" || message.type === "payment_received") {
+          if (message.metadata.visibility === "sender_only") {
+            return message.metadata.senderId === user._id;
+          }
+          if (message.metadata.visibility === "recipient_only") {
+            return message.metadata.recipientId === user._id;
+          }
+        }
+
+        return true;
+      });
+
+      // Sort messages by timestamp
+      const sortedMessages = filteredMessages
+        .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+        .slice(-1 * (args.limit ?? 50));
+
+      debug.log("Messages filtered and sorted", { 
         conversationId: args.conversationId,
-        count: messages.length 
+        totalMessages: messages.length,
+        filteredCount: filteredMessages.length,
+        returnedCount: sortedMessages.length
       });
 
       return {
-        messages: messages.reverse(),
-        nextCursor: messages.length === (args.limit ?? 50) 
-          ? messages[messages.length - 1].timestamp 
+        messages: sortedMessages,
+        nextCursor: sortedMessages.length === (args.limit ?? 50) 
+          ? sortedMessages[sortedMessages.length - 1].timestamp 
           : null,
       };
     } catch (error) {
