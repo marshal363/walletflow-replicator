@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { Id } from "@convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
-import { ArrowUpRight, Loader2, Clock, Check, X, Zap, ArrowDownLeft } from "lucide-react";
+import { ArrowUpRight, Loader2, Clock, Check, X, ArrowDownLeft } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { formatDistanceToNow } from "date-fns";
@@ -149,26 +149,27 @@ export function PaymentRequestCard({
   const getStatusIcon = () => {
     switch (status) {
       case "approved":
-        return <Check className="h-5 w-5 text-emerald-500" />;
+        return <Check className="h-4 w-4 text-emerald-400" />;
       case "declined":
-        return <X className="h-5 w-5 text-red-500" />;
+        return <X className="h-4 w-4 text-red-400" />;
       case "cancelled":
-        return <X className="h-5 w-5 text-zinc-500" />;
+        return <X className="h-4 w-4 text-gray-400" />;
       default:
-        return <Clock className="h-5 w-5 text-blue-500" />;
+        return <Clock className="h-4 w-4 text-blue-400" />;
     }
   };
 
-  const getStatusColor = () => {
+  const getStatusBadgeStyles = () => {
+    const baseStyles = "px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 border";
     switch (status) {
       case "approved":
-        return "text-emerald-500";
+        return cn(baseStyles, "bg-[#1a2b1d] border-[#2d4731] text-emerald-400");
       case "declined":
-        return "text-red-500";
+        return cn(baseStyles, "bg-[#2b1d1d] border-[#472d2d] text-red-400");
       case "cancelled":
-        return "text-zinc-500";
+        return cn(baseStyles, "bg-[#1d1d1d] border-[#2d2d2d] text-gray-400");
       default:
-        return "text-blue-500";
+        return cn(baseStyles, "bg-[#1d2333] border-[#2d3548] text-blue-400");
     }
   };
 
@@ -189,47 +190,37 @@ export function PaymentRequestCard({
   // Render different views based on user role
   const renderRequesterView = () => (
     <div className={cn(
-      "rounded-lg p-4 max-w-[280px] space-y-3",
-      status === "pending" ? "bg-zinc-900/80" : "bg-zinc-900/50"
+      "rounded-xl p-4 space-y-3 transition-colors",
+      status === "pending" ? "bg-[#1d2333] hover:bg-[#252a3d]" : "bg-[#1d1d1d]"
     )}>
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <ArrowUpRight className="h-5 w-5 text-orange-500" />
-          <span className="text-lg font-medium text-white">Your Request</span>
+        <div className="flex items-center gap-2 text-gray-300">
+          <ArrowUpRight className="h-4 w-4" />
+          <span className="text-sm font-medium">Payment Request</span>
         </div>
-        {getStatusIcon()}
+        <Clock className="h-4 w-4 text-gray-500" />
       </div>
 
       <div>
-        <div className="text-2xl font-bold text-white">
-          {amount} sats
+        <div className="text-xl font-bold text-white flex items-baseline gap-2">
+          {amount.toLocaleString()} <span className="text-sm font-normal">sats</span>
         </div>
-        <div className="text-zinc-400 text-sm">
+        <div className="text-sm text-gray-500">
           ≈ ${usdAmount} USD
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <div className={cn(
-          "text-sm font-medium px-2 py-1 rounded-full",
-          status === "pending" ? "bg-blue-500/20 text-blue-400" :
-          status === "approved" ? "bg-emerald-500/20 text-emerald-400" :
-          status === "declined" ? "bg-red-500/20 text-red-400" :
-          "bg-zinc-500/20 text-zinc-400"
-        )}>
+        <div className={getStatusBadgeStyles()}>
+          {getStatusIcon()}
           {getStatusText()}
         </div>
-        {status === "pending" && !isExpired && (
-          <div className="text-xs text-zinc-500">
-            Waiting for payment...
-          </div>
-        )}
       </div>
 
       {status === "pending" && !isExpired && (
         <Button
           variant="ghost"
-          className="w-full text-zinc-400 hover:text-white hover:bg-zinc-800"
+          className="w-full bg-[#2d3548] hover:bg-[#3d4663] text-gray-300 h-9"
           onClick={handleCancel}
           disabled={isLoading}
         >
@@ -242,12 +233,12 @@ export function PaymentRequestCard({
       )}
 
       {isExpired && (
-        <div className="text-zinc-500 text-sm">
+        <div className="text-sm text-gray-500">
           This request has expired
         </div>
       )}
 
-      <div className="flex items-center justify-between text-zinc-500 text-xs">
+      <div className="flex items-center justify-between text-xs text-gray-500">
         <span>
           {formatDistanceToNow(new Date(message.timestamp), { addSuffix: true })}
         </span>
@@ -262,34 +253,29 @@ export function PaymentRequestCard({
 
   const renderRecipientView = () => (
     <div className={cn(
-      "rounded-lg p-4 max-w-[280px] space-y-3",
-      status === "pending" ? "bg-[#1a1c2b]" : "bg-zinc-900/50"
+      "rounded-xl p-4 space-y-3 transition-colors",
+      status === "pending" ? "bg-[#1d2333] hover:bg-[#252a3d]" : "bg-[#1d1d1d]"
     )}>
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <ArrowDownLeft className="h-5 w-5 text-blue-500" />
-          <span className="text-lg font-medium text-white">Payment Request</span>
+        <div className="flex items-center gap-2 text-gray-300">
+          <ArrowDownLeft className="h-4 w-4" />
+          <span className="text-sm font-medium">Payment Request</span>
         </div>
-        {getStatusIcon()}
+        <Clock className="h-4 w-4 text-gray-500" />
       </div>
 
       <div>
-        <div className="text-2xl font-bold text-white">
-          {amount} sats
+        <div className="text-xl font-bold text-white flex items-baseline gap-2">
+          {amount.toLocaleString()} <span className="text-sm font-normal">sats</span>
         </div>
-        <div className="text-zinc-400 text-sm">
+        <div className="text-sm text-gray-500">
           ≈ ${usdAmount} USD
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <div className={cn(
-          "text-sm font-medium px-2 py-1 rounded-full",
-          status === "pending" ? "bg-blue-500/20 text-blue-400" :
-          status === "approved" ? "bg-emerald-500/20 text-emerald-400" :
-          status === "declined" ? "bg-red-500/20 text-red-400" :
-          "bg-zinc-500/20 text-zinc-400"
-        )}>
+        <div className={getStatusBadgeStyles()}>
+          {getStatusIcon()}
           {getStatusText()}
         </div>
       </div>
@@ -297,7 +283,7 @@ export function PaymentRequestCard({
       {status === "pending" && !isExpired && (
         <div className="flex flex-col gap-2">
           <Button
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white"
+            className="w-full bg-[#0066FF] hover:bg-[#0052CC] text-white h-9"
             onClick={handleApprove}
             disabled={isLoading}
           >
@@ -309,7 +295,7 @@ export function PaymentRequestCard({
           </Button>
           <Button
             variant="ghost"
-            className="w-full text-zinc-400 hover:text-white hover:bg-zinc-800"
+            className="w-full bg-[#2d3548] hover:bg-[#3d4663] text-gray-300 h-9"
             onClick={handleDecline}
             disabled={isLoading}
           >
@@ -319,12 +305,12 @@ export function PaymentRequestCard({
       )}
 
       {isExpired && (
-        <div className="text-zinc-500 text-sm">
+        <div className="text-sm text-gray-500">
           This request has expired
         </div>
       )}
 
-      <div className="flex items-center justify-between text-zinc-500 text-xs">
+      <div className="flex items-center justify-between text-xs text-gray-500">
         <span>
           {formatDistanceToNow(new Date(message.timestamp), { addSuffix: true })}
         </span>

@@ -7,6 +7,7 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { useToast } from "@/components/ui/use-toast";
+import { NumPadView } from "@/components/NumPadView";
 
 const debug = {
   log: (message: string, data?: Record<string, unknown>) => {
@@ -32,7 +33,6 @@ const debug = {
 };
 
 const RequestAmount = () => {
-  const [amount, setAmount] = useState("0");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -42,20 +42,7 @@ const RequestAmount = () => {
   // Extract conversation ID and recipient info from state with validation
   const conversationId = location.state?.conversationId;
   const recipientInfo = location.state?.recipientInfo;
-
-  // Log initial mount
-  useEffect(() => {
-    debug.startGroup("Component Mount");
-    debug.log("Initial state", {
-      recipientId,
-      conversationId,
-      navigationSource: location.state?.from,
-      hasLocationState: !!location.state,
-      hasRecipientInfo: !!recipientInfo,
-      recipientInfo
-    });
-    debug.endGroup();
-  }, [recipientId, location.state, recipientInfo]);
+  const navigationSource = location.state?.from || 'standalone';
 
   // Get current user
   const currentUser = useQuery(api.users.getCurrentUser);
@@ -100,34 +87,7 @@ const RequestAmount = () => {
   // Create payment request mutation
   const createRequest = useMutation(api.paymentRequests.createChatPaymentRequest);
 
-  const handleNumberPress = (num: string) => {
-    debug.log('Number pressed', {
-      digit: num,
-      currentAmount: amount,
-      newAmount: amount === "0" && num !== "." ? num : amount + num
-    });
-
-    if (amount === "0" && num !== ".") {
-      setAmount(num);
-    } else if (num === "." && amount.includes(".")) {
-      debug.log('Decimal point prevented - already exists', {
-        currentAmount: amount
-      });
-      return;
-    } else {
-      setAmount(prev => prev + num);
-    }
-  };
-
-  const handleDelete = () => {
-    debug.log('Delete pressed', {
-      currentAmount: amount,
-      newAmount: amount.length > 1 ? amount.slice(0, -1) : "0"
-    });
-    setAmount(prev => prev.length > 1 ? prev.slice(0, -1) : "0");
-  };
-
-  const handleRequest = async () => {
+  const handleRequest = async (amount: number) => {
     if (!currentUser || !recipientId || !conversationId || !selectedUser) {
       debug.error("Request validation failed", {
         hasCurrentUser: !!currentUser,
@@ -151,46 +111,30 @@ const RequestAmount = () => {
     }
 
     debug.startGroup("Request Creation");
-    debug.log("Starting request process", {
-      currentUserId: currentUser._id,
-      recipientId,
-      amount,
-      conversationId,
-      selectedUser: {
-        id: selectedUser._id,
-        fullName: selectedUser.fullName
-      },
-      source: recipientInfo ? 'navigation_state' : 'conversation'
-    });
-
     setIsLoading(true);
-    try {
-      const amountInSats = parseFloat(amount);
-      if (isNaN(amountInSats) || amountInSats <= 0) {
-        throw new Error("Invalid amount");
-      }
 
+    try {
       debug.log("Creating request", {
         requesterId: currentUser._id,
         recipientId,
-        amount: amountInSats,
+        amount,
         type: "lightning",
-        description: `Payment request for ${amountInSats} sats`
+        description: `Payment request for ${amount} sats`
       });
 
       const result = await createRequest({
         requesterId: currentUser._id,
         recipientId,
         conversationId,
-        amount: amountInSats,
+        amount,
         type: "lightning",
-        description: `Payment request for ${amountInSats} sats`
+        description: `Payment request for ${amount} sats`
       });
 
       debug.log("Request created successfully", {
         requestId: result.requestId,
         messageId: result.messageId,
-        amount: amountInSats,
+        amount,
         recipientName: selectedUser.fullName
       });
 
@@ -199,28 +143,9 @@ const RequestAmount = () => {
         description: `Requested ${amount} sats from ${selectedUser.fullName}`,
       });
 
-      debug.log("Navigating to conversation", {
-        conversationId,
-        requestId: result.requestId
-      });
-
       navigate(`/conversation/${conversationId}`);
     } catch (error) {
-      debug.error("Request creation failed", {
-        error: error instanceof Error ? error.message : "Unknown error",
-        currentUserId: currentUser._id,
-        recipientId,
-        amount,
-        conversationId,
-        context: {
-          selectedUser: selectedUser ? {
-            id: selectedUser._id,
-            fullName: selectedUser.fullName
-          } : null,
-          source: recipientInfo ? 'navigation_state' : 'conversation'
-        }
-      });
-      
+      debug.error("Request creation failed", error);
       toast({
         title: "Request Failed",
         description: error instanceof Error ? error.message : "An error occurred",
@@ -232,63 +157,36 @@ const RequestAmount = () => {
     }
   };
 
-  // Calculate USD value (this is a placeholder - you should use a real BTC/USD rate)
-  const usdAmount = parseFloat(amount) * 0.00043; // Example rate: 1 sat = $0.00043 USD
-
-  const isRequestDisabled = !currentUser || amount === "0" || isLoading || !conversationId || !selectedUser;
+  if (!selectedUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black text-white">
+        <div className="animate-pulse">Loading...</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex flex-col bg-black text-white">
-      <Header title="Requesting From" />
-
-      <div className="flex-1 flex flex-col items-center pt-8 pb-4 space-y-2">
-        <Avatar className="h-16 w-16 bg-blue-600 flex items-center justify-center text-xl font-medium">
-          {selectedUser?.profileImageUrl ? (
-            <img 
-              src={selectedUser.profileImageUrl} 
-              alt={selectedUser.fullName}
-              className="w-full h-full object-cover rounded-full"
-            />
-          ) : (
-            <span className="uppercase">{selectedUser?.fullName?.charAt(0) || "?"}</span>
-          )}
-        </Avatar>
-        <h2 className="text-lg font-medium">{selectedUser?.fullName || "Loading..."}</h2>
-        <p className="text-sm text-zinc-400">@{selectedUser?.username || "..."}</p>
-        
-        <div className="text-center mt-4 mb-6">
-          <h1 className="text-6xl font-bold tracking-tighter">{amount}</h1>
-          <p className="text-base text-zinc-400 mt-1">sats</p>
-          <p className="text-sm text-zinc-500">${usdAmount.toFixed(2)} USD</p>
-        </div>
-      </div>
-
-      <div className="w-full max-w-md mx-auto px-4">
-        <NumPad 
-          onNumberPress={handleNumberPress} 
-          onDelete={handleDelete}
-          className="grid grid-cols-3 gap-3 mb-4"
-          buttonClassName="h-14 rounded-full bg-zinc-800 hover:bg-zinc-700 text-white text-xl font-medium"
-        />
-
-        <div className="space-y-3 pb-6">
-          <ActionButton
-            variant="secondary"
-            onClick={() => navigate(-1)}
-            className="w-full bg-zinc-800 hover:bg-zinc-700 text-white"
-          >
-            Cancel
-          </ActionButton>
-          <ActionButton
-            onClick={handleRequest}
-            disabled={isRequestDisabled}
-            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white disabled:bg-emerald-600/50"
-          >
-            {isLoading ? "Requesting..." : "Request"}
-          </ActionButton>
-        </div>
-      </div>
-    </div>
+    <NumPadView
+      title="Requesting From"
+      recipient={{
+        id: selectedUser._id,
+        fullName: selectedUser.fullName,
+        username: selectedUser.username,
+        profileImageUrl: selectedUser.profileImageUrl
+      }}
+      onSubmit={handleRequest}
+      onCancel={() => navigate(-1)}
+      minAmount={1}
+      maxAmount={1000000} // 1M sats
+      submitLabel={isLoading ? "Requesting..." : "Request"}
+      submitButtonClass="bg-emerald-600 hover:bg-emerald-500"
+      isLoading={isLoading}
+      showAvailableBalance={false}
+      navigationContext={{
+        from: navigationSource as 'chat' | 'standalone',
+        conversationId
+      }}
+    />
   );
 };
 

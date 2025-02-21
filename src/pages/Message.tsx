@@ -11,6 +11,7 @@ import { Send, Zap, QrCode, Split, ArrowLeft } from "lucide-react";
 import { PaymentRequestCard } from "@/components/messages/PaymentRequestCard";
 import { useUser } from "@clerk/clerk-react";
 import { Id } from "@convex/_generated/dataModel";
+import { ActionBar } from "@/components/messages/ActionBar";
 
 // Debug logger
 const debug = {
@@ -425,59 +426,20 @@ const Message = () => {
         )}
       </ScrollArea>
 
-      {/* Fixed bottom input section */}
+      {/* Replace the old action bar with the new one */}
       <div className="sticky bottom-0 z-50">
         <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/90 to-transparent" />
-        <div className="relative z-10 p-4 border-t border-zinc-800/50 bg-black/40 backdrop-blur-md">
-          {!showPaymentActions ? (
-            <div className="flex items-center space-x-3">
-              <button 
-                onClick={() => handlePaymentActionsToggle(true)}
-                className="h-11 w-11 rounded-full bg-zinc-800/80 flex items-center justify-center hover:bg-zinc-700 transition-colors"
-              >
-                <Zap className="h-5 w-5 text-white" />
-              </button>
-              <div className="flex-1">
-                <MessageInput
-                  value={message}
-                  onChange={handleMessageChange}
-                  onSubmit={handleSend}
-                  placeholder={`Message ${otherParticipant.username}`}
-                  disabled={isSending}
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="flex space-x-2">
-              <button 
-                onClick={handleSendClick}
-                className="flex-1 bg-[#0066FF] text-white rounded-full py-2.5 px-4 font-medium hover:bg-[#0052CC] transition-colors flex items-center justify-center gap-2"
-              >
-                <Send className="h-5 w-5" />
-                <span>Send</span>
-              </button>
-              <button 
-                onClick={handleRequestClick}
-                className="flex-1 bg-zinc-800/80 text-white rounded-full py-2.5 px-4 font-medium hover:bg-zinc-700 transition-colors flex items-center justify-center gap-2"
-              >
-                <QrCode className="h-5 w-5" />
-                <span>Request</span>
-              </button>
-              <button 
-                onClick={() => navigate(`/split/${conversationId}`)} 
-                className="flex-1 bg-zinc-800/80 text-white rounded-full py-2.5 px-4 font-medium hover:bg-zinc-700 transition-colors flex items-center justify-center gap-2"
-              >
-                <Split className="h-5 w-5" />
-                <span>Split</span>
-              </button>
-              <button 
-                onClick={() => handlePaymentActionsToggle(false)}
-                className="h-11 w-11 rounded-full bg-zinc-800/80 flex items-center justify-center hover:bg-zinc-700 transition-colors"
-              >
-                <ArrowLeft className="h-5 w-5 text-white" />
-              </button>
-            </div>
-          )}
+        <div className="relative z-10">
+          <ActionBar
+            onSend={handleSend}
+            onSendClick={handleSendClick}
+            onRequestClick={handleRequestClick}
+            onSplitClick={() => navigate(`/split/${conversationId}`)}
+            isSending={isSending}
+            messageValue={message}
+            onMessageChange={handleMessageChange}
+            recipientUsername={otherParticipant?.username}
+          />
         </div>
       </div>
     </div>

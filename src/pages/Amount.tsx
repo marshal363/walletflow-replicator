@@ -8,6 +8,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { Id } from "@convex/_generated/dataModel";
 import { useToast } from "@/components/ui/use-toast";
+import { NumPadView } from "@/components/NumPadView";
 
 const debug = {
   log: (message: string, data?: Record<string, unknown>) => {
@@ -35,7 +36,6 @@ const debug = {
 };
 
 const Amount = () => {
-  const [amount, setAmount] = useState("0");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -44,17 +44,16 @@ const Amount = () => {
 
   // Extract conversation ID from state with validation
   const conversationId = location.state?.conversationId;
+  const navigationSource = location.state?.from || 'standalone';
 
   // Track if we've shown the conversation ID warning
   const [hasShownWarning, setHasShownWarning] = useState(false);
 
   debug.log('Amount view mounted/updated', {
     recipientId,
-    currentAmount: amount,
-    isLoading,
+    navigationSource,
     conversationId,
-    hasLocationState: !!location.state,
-    navigationSource: location.state?.from
+    hasLocationState: !!location.state
   });
 
   // Fetch user details directly using ID
@@ -75,11 +74,9 @@ const Amount = () => {
     debug.startGroup("Transfer Setup");
     debug.log("Transfer view initialized", {
       recipientId,
-      currentAmount: amount,
-      isLoading,
+      navigationSource,
       conversationId,
-      hasLocationState: !!location.state,
-      navigationSource: location.state?.from
+      hasLocationState: !!location.state
     });
     debug.endGroup();
   }, []);
@@ -118,45 +115,17 @@ const Amount = () => {
       debug.log('No conversation ID provided', {
         recipientId,
         recipientName: selectedUser.fullName,
-        navigationSource: location.state?.from
+        navigationSource
       });
       setHasShownWarning(true);
     }
-  }, [conversationId, hasShownWarning, selectedUser, recipientId, location.state]);
+  }, [conversationId, hasShownWarning, selectedUser, recipientId, navigationSource]);
   
   // Transfer mutation
   const transfer = useMutation(api.transfers.transferSats);
 
-  const handleNumberPress = (num: string) => {
-    debug.log('Number pressed', {
-      digit: num,
-      currentAmount: amount,
-      timestamp: new Date().toISOString()
-    });
-
-    if (amount === "0" && num !== ".") {
-      setAmount(num);
-    } else if (num === "." && amount.includes(".")) {
-      debug.log('Decimal point prevented - already exists', {
-        currentAmount: amount
-      });
-      return;
-    } else {
-      setAmount(prev => prev + num);
-    }
-  };
-
-  const handleDelete = () => {
-    debug.log('Delete pressed', {
-      currentAmount: amount,
-      newAmount: amount.length > 1 ? amount.slice(0, -1) : "0",
-      timestamp: new Date().toISOString()
-    });
-    setAmount(prev => prev.length > 1 ? prev.slice(0, -1) : "0");
-  };
-
-  const handleTransfer = async () => {
-    if (!currentUserWallet || !recipientId) {
+  const handleTransfer = async (amount: number) => {
+    if (!currentUserWallet || !recipientId || !selectedUser) {
       debug.error("Transfer validation failed", {
         hasWallet: !!currentUserWallet,
         hasRecipientId: !!recipientId,
@@ -167,237 +136,81 @@ const Amount = () => {
     }
 
     debug.startGroup("Transfer Execution");
-    
-    debug.log("Starting transfer process", {
-      sourceWalletId: currentUserWallet._id,
-      destinationUserId: recipientId,
-      amount,
-      providedConversationId: conversationId,
-      hasExistingConversation: !!conversation
-    });
-
     setIsLoading(true);
+
     try {
-      const amountInSats = parseFloat(amount);
-      if (isNaN(amountInSats) || amountInSats <= 0) {
-        throw new Error("Invalid amount");
-      }
-
-      debug.log("Source details", {
+      debug.log("Starting transfer process", {
         sourceWalletId: currentUserWallet._id,
-        sourceBalance: currentUserWallet.balance,
-        transferAmount: amountInSats,
-        hasConversation: !!conversation
-      });
-
-      debug.log("Destination details", {
         destinationUserId: recipientId,
-        destinationName: selectedUser?.fullName,
-        destinationUsername: selectedUser?.username,
-        hasConversation: !!conversation
+        amount,
+        providedConversationId: conversationId
       });
-
-      debug.startGroup("Conversation Flow");
-      debug.log("Starting conversation validation", {
-        providedConversationId: conversationId,
-        hasExistingConversation: !!conversation,
-        participants: {
-          source: currentUserWallet._id,
-          destination: recipientId
-        }
-      });
-
-      if (conversation) {
-        debug.log("Existing conversation details", {
-          conversationId,
-          messageCount: conversation.messages?.length,
-          lastMessageAt: conversation.messages?.[0]?.timestamp,
-          participants: conversation.messages?.[0]?.senderId
-        });
-      }
 
       const result = await transfer({
         sourceWalletId: currentUserWallet._id,
         destinationUserId: recipientId,
-        amount: amountInSats,
-        description: `Transfer to ${selectedUser?.fullName || 'user'}`,
+        amount,
+        description: `Transfer to ${selectedUser.fullName}`,
         conversationId
       });
 
-      debug.log("Transfer mutation completed", {
-        success: result.success,
-        transferId: result.transferId,
-        resultConversationId: result.conversationId,
-        originalConversationId: result.originalConversationId,
-        isExistingConversation: result.isExistingConversation,
-        sentMessageId: result.sentMessageId,
-        receivedMessageId: result.receivedMessageId
-      });
-
-      debug.startGroup("Conversation Resolution");
-      debug.log("Conversation status", {
-        providedConversationId: conversationId,
-        resultConversationId: result.conversationId,
-        originalConversationId: result.originalConversationId,
-        isNewConversation: !result.isExistingConversation,
-        isExistingConversation: result.isExistingConversation,
-        validationDetails: {
-          hadProvidedId: !!conversationId,
-          matchedOriginal: result.conversationId === conversationId,
-          isValid: result.success
-        }
-      });
-
       if (result.success) {
-        const targetConversationId = result.conversationId;
-        
-        debug.log("Conversation details", {
-          targetConversationId,
-          originalConversationId: result.originalConversationId,
-          isNewConversation: !result.isExistingConversation,
-          isExistingConversation: result.isExistingConversation,
-          transferDetails: {
-            transferId: result.transferId,
-            amount: amountInSats,
-            recipientName: selectedUser?.fullName
-          },
-          validationResult: {
-            success: true,
-            matchesProvided: targetConversationId === conversationId
-          }
-        });
-
-        debug.log("Message details", {
-          conversationId: targetConversationId,
-          sentMessageId: result.sentMessageId,
-          receivedMessageId: result.receivedMessageId,
-          transferId: result.transferId,
-          messageFlow: {
-            hasValidConversation: !!targetConversationId,
-            isExistingConversation: result.isExistingConversation,
-            messagesPaired: !!result.sentMessageId && !!result.receivedMessageId
-          }
-        });
-
         toast({
           title: "Transfer Successful",
-          description: `${amount} sats sent to ${selectedUser?.fullName}`,
+          description: `${amount} sats sent to ${selectedUser.fullName}`,
         });
 
-        debug.log("Navigation preparation", {
-          destination: `/conversation/${targetConversationId}`,
-          transferComplete: true,
-          amount: amountInSats,
-          recipientName: selectedUser?.fullName,
-          conversationFlow: {
-            providedId: conversationId,
-            finalId: targetConversationId,
-            isNew: !result.isExistingConversation,
-            messageIds: {
-              sent: result.sentMessageId,
-              received: result.receivedMessageId
-            }
-          },
-          navigationDetails: {
-            hasValidTarget: !!targetConversationId,
-            matchesOriginal: targetConversationId === conversationId,
-            isNewConversation: !result.isExistingConversation
-          }
-        });
-
-        debug.endGroup(); // End Conversation Resolution
-        debug.endGroup(); // End Conversation Flow
-        debug.endGroup(); // End Transfer Execution
-
-        navigate(`/conversation/${targetConversationId}`);
+        // Navigate back to conversation or messages list
+        if (result.conversationId) {
+          navigate(`/conversation/${result.conversationId}`);
+        } else {
+          navigate("/messages");
+        }
       }
     } catch (error) {
-      debug.error("Transfer execution failed", {
-        phase: "execution",
-        error: error instanceof Error ? error.message : "Unknown error",
-        context: {
-          recipientId,
-          amount,
-          walletId: currentUserWallet._id,
-          conversationId,
-          conversationState: {
-            hadProvidedId: !!conversationId,
-            hadExistingConversation: !!conversation,
-            validationFailed: true
-          }
-        }
-      });
-      
+      debug.error("Transfer execution failed", error);
       toast({
         title: "Transfer Failed",
         description: error instanceof Error ? error.message : "An error occurred",
         variant: "destructive",
       });
-
-      debug.endGroup(); // End Conversation Flow
-      debug.endGroup(); // End Transfer Execution
     } finally {
       setIsLoading(false);
+      debug.endGroup();
     }
   };
 
-  // Calculate USD value (this is a placeholder - you should use a real BTC/USD rate)
-  const usdAmount = parseFloat(amount) * 0.00043; // Example rate: 1 sat = $0.00043 USD
-
-  const isTransferDisabled = !currentUserWallet || amount === "0" || isLoading;
+  if (!selectedUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black text-white">
+        <div className="animate-pulse">Loading...</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex flex-col bg-black text-white">
-      <Header title="Sending To" />
-
-      <div className="flex-1 flex flex-col items-center pt-8 pb-4 space-y-2">
-        <Avatar className="h-16 w-16 bg-blue-600 flex items-center justify-center text-xl font-medium">
-          {selectedUser?.profileImageUrl ? (
-            <img 
-              src={selectedUser.profileImageUrl} 
-              alt={selectedUser.fullName}
-              className="w-full h-full object-cover rounded-full"
-            />
-          ) : (
-            <span className="uppercase">{selectedUser?.fullName?.charAt(0) || "?"}</span>
-          )}
-        </Avatar>
-        <h2 className="text-lg font-medium">{selectedUser?.fullName || "Loading..."}</h2>
-        <p className="text-sm text-zinc-400">@{selectedUser?.username}</p>
-        
-        <div className="text-center mt-4 mb-6">
-          <h1 className="text-6xl font-bold tracking-tighter">{amount}</h1>
-          <p className="text-base text-zinc-400 mt-1">sats</p>
-          <p className="text-sm text-zinc-500">${usdAmount.toFixed(2)} USD</p>
-        </div>
-      </div>
-
-      <div className="w-full max-w-md mx-auto px-4">
-        <NumPad 
-          onNumberPress={handleNumberPress} 
-          onDelete={handleDelete}
-          className="grid grid-cols-3 gap-3 mb-4"
-          buttonClassName="h-14 rounded-full bg-zinc-800 hover:bg-zinc-700 text-white text-xl font-medium"
-        />
-
-        <div className="space-y-3 pb-6">
-          <ActionButton
-            variant="secondary"
-            onClick={() => navigate(-1)}
-            className="w-full bg-zinc-800 hover:bg-zinc-700 text-white"
-          >
-            Cancel
-          </ActionButton>
-          <ActionButton
-            onClick={handleTransfer}
-            disabled={isTransferDisabled}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white disabled:bg-blue-600/50"
-          >
-            {isLoading ? "Sending..." : "Next"}
-          </ActionButton>
-        </div>
-      </div>
-    </div>
+    <NumPadView
+      title="Sending To"
+      recipient={{
+        id: selectedUser._id,
+        fullName: selectedUser.fullName,
+        username: selectedUser.username,
+        profileImageUrl: selectedUser.profileImageUrl
+      }}
+      onSubmit={handleTransfer}
+      onCancel={() => navigate(-1)}
+      minAmount={1}
+      maxAmount={1000000} // 1M sats
+      submitLabel={isLoading ? "Sending..." : "Send"}
+      submitButtonClass="bg-[#0066FF] hover:bg-[#0052CC]"
+      isLoading={isLoading}
+      showAvailableBalance={true}
+      availableBalance={currentUserWallet?.balance}
+      navigationContext={{
+        from: navigationSource as 'chat' | 'standalone',
+        conversationId
+      }}
+    />
   );
 };
 
