@@ -2,6 +2,32 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { getOrCreateSpendingWallet, validateTransferEligibility, createTransactionPair } from "./utils/walletHelpers";
+import { DatabaseReader, DatabaseWriter, MutationCtx, QueryCtx } from "./_generated/server";
+
+// Add these types at the top
+interface User {
+  _id: Id<"users">;
+  fullName: string;
+  username?: string;
+}
+
+interface Conversation {
+  _id: Id<"conversations">;
+  participants: Id<"users">[];
+  lastMessageAt: string;
+  createdAt: string;
+  updatedAt: string;
+  status: string;
+  metadata: {
+    isGroup: boolean;
+    createdBy: Id<"users">;
+    name?: string;
+  };
+}
+
+interface ConvexCtx {
+  db: DatabaseReader | DatabaseWriter;
+}
 
 // Debug logger that accepts both query and mutation contexts
 const debug = {
@@ -68,6 +94,113 @@ export const getTransferStatus = query({
     return transfer;
   },
 });
+
+// Update the helper function with proper types
+async function getOrCreateConversationForTransfer(
+  ctx: MutationCtx,
+  sourceUser: User,
+  destinationUser: User,
+  providedConversationId?: Id<"conversations">
+): Promise<Conversation> {
+  const debug = {
+    log: (message: string, data?: Record<string, unknown>) => {
+      console.log("[CONVEX M(transfers:transferSats)] [LOG]", `'[Convex:Transfers] ${message}'`, {
+        ...data,
+        timestamp: new Date().toISOString()
+      });
+    }
+  };
+
+  // If conversation ID is provided, validate it
+  if (providedConversationId) {
+    const conversation = await ctx.db.get(providedConversationId);
+    if (!conversation) {
+      throw new Error("Provided conversation not found");
+    }
+    
+    // Verify both users are participants
+    if (!conversation.participants.includes(sourceUser._id) || 
+        !conversation.participants.includes(destinationUser._id)) {
+      throw new Error("Invalid conversation participants");
+    }
+    
+    return conversation as Conversation;
+  }
+
+  // Look for existing conversation between these users
+  const existingConversation = await ctx.db
+    .query("conversations")
+    .withIndex("by_participants")
+    .filter((q) => 
+      q.and(
+        q.eq(q.field("metadata.isGroup"), false),
+        q.or(
+          q.eq(q.field("participants"), [sourceUser._id, destinationUser._id]),
+          q.eq(q.field("participants"), [destinationUser._id, sourceUser._id])
+        )
+      )
+    )
+    .first();
+
+  if (existingConversation) {
+    debug.log("Found existing conversation for transfer", {
+      conversationId: existingConversation._id,
+      participants: existingConversation.participants
+    });
+    return existingConversation as Conversation;
+  }
+
+  // Create new conversation if none exists
+  const now = new Date().toISOString();
+  const newConversationId = await ctx.db.insert("conversations", {
+    participants: [sourceUser._id, destinationUser._id],
+    lastMessageAt: now,
+    createdAt: now,
+    updatedAt: now,
+    status: "active",
+    metadata: {
+      isGroup: false,
+      createdBy: sourceUser._id,
+      name: undefined
+    },
+  });
+
+  debug.log("Created new conversation for transfer", {
+    conversationId: newConversationId,
+    participants: [sourceUser._id, destinationUser._id]
+  });
+
+  // Create participant records
+  await Promise.all([
+    ctx.db.insert("conversationParticipants", {
+      conversationId: newConversationId,
+      userId: sourceUser._id,
+      joinedAt: now,
+      role: "admin",
+      isArchived: false,
+      isMuted: false,
+      notificationPreferences: {
+        mentions: true,
+        all: true,
+      },
+    }),
+    ctx.db.insert("conversationParticipants", {
+      conversationId: newConversationId,
+      userId: destinationUser._id,
+      joinedAt: now,
+      role: "member",
+      isArchived: false,
+      isMuted: false,
+      notificationPreferences: {
+        mentions: true,
+        all: true,
+      },
+    }),
+  ]);
+
+  const newConversation = await ctx.db.get(newConversationId);
+  return newConversation as Conversation;
+}
 
 export const transferSats = mutation({
   args: {
@@ -159,49 +292,24 @@ export const transferSats = mutation({
       // 6. Handle conversation and messages
       debug.startGroup("Conversation and Messages");
       
-      // Simple conversation validation
-      if (!args.conversationId) {
-        debug.error("Conversation ID is required for payment messages", {
-          transferId: transfer,
-          timestamp: new Date().toISOString()
-        });
-        throw new Error("Conversation ID is required for payment messages");
-      }
+      // Get or create conversation
+      const conversation = await getOrCreateConversationForTransfer(
+        ctx,
+        sourceUser,
+        destinationUser,
+        args.conversationId
+      );
 
-      // Validate conversation exists and participants
-      const conversation = await ctx.db.get(args.conversationId);
-      if (!conversation) {
-        debug.error("Conversation not found", {
-          conversationId: args.conversationId,
-          transferId: transfer,
-          timestamp: new Date().toISOString()
-        });
-        throw new Error("Conversation not found");
-      }
-
-      // Validate participants
-      if (!conversation.participants.includes(sourceUser._id) || 
-          !conversation.participants.includes(destinationUser._id)) {
-        debug.error("Invalid conversation participants", {
-          conversationId: args.conversationId,
-          expectedParticipants: [sourceUser._id, destinationUser._id],
-          actualParticipants: conversation.participants,
-          transferId: transfer,
-          timestamp: new Date().toISOString()
-        });
-        throw new Error("Invalid conversation participants");
-      }
-
-      debug.log("Conversation validated", {
-        conversationId: args.conversationId,
+      debug.log("Conversation validated/created", {
+        conversationId: conversation._id,
         participants: conversation.participants,
-        transferId: transfer,
-        timestamp: new Date().toISOString()
+        isNew: !args.conversationId,
+        transferId: transfer
       });
 
       // Create payment sent message
       const sentMessage = await ctx.db.insert("messages", {
-        conversationId: args.conversationId,
+        conversationId: conversation._id,
         senderId: sourceUser._id,
         content: `Sent ${args.amount} sats to ${destinationUser.fullName}`,
         timestamp: new Date().toISOString(),
@@ -219,19 +327,9 @@ export const transferSats = mutation({
         },
       });
 
-      debug.log("Payment sent message created", {
-        messageId: sentMessage,
-        conversationId: args.conversationId,
-        senderId: sourceUser._id,
-        recipientId: destinationUser._id,
-        amount: args.amount,
-        transferId: transfer,
-        timestamp: new Date().toISOString()
-      });
-
       // Create payment received message
       const receivedMessage = await ctx.db.insert("messages", {
-        conversationId: args.conversationId,
+        conversationId: conversation._id,
         senderId: destinationUser._id,
         content: `Received ${args.amount} sats from ${sourceUser.fullName}`,
         timestamp: new Date().toISOString(),
@@ -249,29 +347,11 @@ export const transferSats = mutation({
         },
       });
 
-      debug.log("Payment received message created", {
-        messageId: receivedMessage,
-        conversationId: args.conversationId,
-        senderId: destinationUser._id,
-        recipientId: sourceUser._id,
-        amount: args.amount,
-        transferId: transfer,
-        timestamp: new Date().toISOString()
-      });
-
       // Update conversation's last message
-      await ctx.db.patch(args.conversationId, {
+      await ctx.db.patch(conversation._id, {
         lastMessageId: receivedMessage,
         lastMessageAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      });
-
-      debug.log("Conversation updated", {
-        conversationId: args.conversationId,
-        lastMessageId: receivedMessage,
-        lastMessageAt: new Date().toISOString(),
-        transferId: transfer,
-        timestamp: new Date().toISOString()
       });
 
       debug.endGroup();
@@ -284,19 +364,19 @@ export const transferSats = mutation({
       debug.log("Transfer completed", {
         success: true,
         transferId: transfer,
-        conversationId: args.conversationId,
+        conversationId: conversation._id,
         sentMessageId: sentMessage,
         receivedMessageId: receivedMessage,
-        timestamp: new Date().toISOString()
+        isExistingConversation: !!args.conversationId
       });
 
       return {
         success: true,
         transferId: transfer,
-        conversationId: args.conversationId,
+        conversationId: conversation._id,
         sentMessageId: sentMessage,
         receivedMessageId: receivedMessage,
-        isExistingConversation: true
+        isExistingConversation: !!args.conversationId
       };
     } catch (error) {
       debug.error("Transfer execution failed", {
