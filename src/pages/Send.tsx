@@ -2,7 +2,7 @@ import { Header } from "@/components/Header";
 import { Avatar } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Search, List, QrCode, Keyboard } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -22,6 +22,14 @@ const debug = {
       error,
       timestamp: new Date().toISOString(),
     });
+  },
+  startGroup: (name: string) => {
+    console.group(`[Send View] ${name}`);
+    console.log("Started at:", new Date().toISOString());
+  },
+  endGroup: () => {
+    console.log("Ended at:", new Date().toISOString());
+    console.groupEnd();
   }
 };
 
@@ -35,91 +43,135 @@ interface User {
 
 const Send = () => {
   const navigate = useNavigate();
-  const { id: conversationId } = useParams();
+  const location = useLocation();
+  const { id: recipientId } = useParams();
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
 
-  debug.log('Send view mounted/updated', {
-    conversationId,
-    searchQuery,
-    debouncedSearch,
-    timestamp: new Date().toISOString()
-  });
+  // Extract recipient info from location state
+  const recipientInfo = location.state?.recipientInfo;
 
-  // Get conversation details if conversationId exists
-  const conversationDetails = useQuery(
+  debug.startGroup("Component Mount");
+  debug.log("Initial state", {
+    recipientId,
+    hasLocationState: !!location.state,
+    navigationSource: location.state?.from,
+    hasRecipientInfo: !!recipientInfo,
+    recipientInfo
+  });
+  debug.endGroup();
+
+  // Get conversation details if ID exists
+  const conversation = useQuery(
     api.messages.getMessages,
-    conversationId ? { conversationId } : "skip"
+    location.state?.conversationId ? { conversationId: location.state.conversationId, limit: 1 } : "skip"
   );
 
-  // Get other participant details
+  // Get other participant details if in conversation context
   const otherParticipant = useQuery(
     api.users.getOtherParticipant,
-    conversationId ? { conversationId } : "skip"
+    location.state?.conversationId ? { conversationId: location.state.conversationId } : "skip"
   );
 
-  // Effect to handle pre-selected recipient from conversation
-  useEffect(() => {
-    if (conversationId && otherParticipant) {
-      debug.log('Recipient found from conversation, navigating to amount', {
-        conversationId,
-        recipientId: otherParticipant._id,
-        recipientName: otherParticipant.fullName,
-        timestamp: new Date().toISOString()
-      });
-      
-      navigate(`/amount/${otherParticipant._id}`, {
-        state: { conversationId }
-      });
-    }
-  }, [conversationId, otherParticipant, navigate]);
-
-  // Search users when query exists
+  // Search users when query exists and not in conversation context
   const searchResults = useQuery(
     api.conversations.searchUsers,
-    debouncedSearch ? { query: debouncedSearch } : "skip"
+    !location.state?.conversationId && debouncedSearch ? { query: debouncedSearch } : "skip"
   );
 
-  // Log when search results are updated
+  // Effect to handle pre-selected recipient
   useEffect(() => {
-    if (searchResults) {
-      debug.log('Search results updated', {
-        query: debouncedSearch,
-        resultCount: searchResults.length,
-        results: searchResults.map(user => ({
-          id: user._id,
-          username: user.username
-        })),
-        timestamp: new Date().toISOString()
+    if (recipientInfo && recipientId === recipientInfo.id) {
+      debug.log("Using recipient info from navigation state", {
+        recipientId,
+        recipientInfo,
+        from: location.state?.from
+      });
+
+      navigate(`/amount/${recipientId}`, {
+        state: { 
+          conversationId: location.state?.conversationId,
+          from: location.state?.from || 'send',
+          recipientInfo
+        }
+      });
+    } else if (location.state?.conversationId && otherParticipant) {
+      debug.log("Using recipient from conversation", {
+        conversationId: location.state.conversationId,
+        recipientId: otherParticipant._id,
+        recipientName: otherParticipant.fullName
+      });
+
+      navigate(`/amount/${otherParticipant._id}`, {
+        state: { 
+          conversationId: location.state.conversationId,
+          from: location.state?.from || 'send',
+          recipientInfo: {
+            id: otherParticipant._id,
+            fullName: otherParticipant.fullName,
+            username: otherParticipant.username,
+            profileImageUrl: otherParticipant.profileImageUrl
+          }
+        }
       });
     }
-  }, [searchResults, debouncedSearch]);
+  }, [recipientInfo, recipientId, location.state, otherParticipant, navigate]);
+
+  // Log when conversation data changes
+  useEffect(() => {
+    if (conversation) {
+      debug.log("Conversation context loaded", {
+        conversationId: location.state?.conversationId,
+        hasMessages: conversation.messages?.length > 0,
+        lastMessage: conversation.messages?.[0]
+      });
+    }
+  }, [conversation, location.state?.conversationId]);
+
+  // Log when participant data changes
+  useEffect(() => {
+    if (otherParticipant) {
+      debug.log("Other participant loaded", {
+        conversationId: location.state?.conversationId,
+        participantId: otherParticipant._id,
+        username: otherParticipant.username,
+        fullName: otherParticipant.fullName
+      });
+    }
+  }, [otherParticipant, location.state?.conversationId]);
 
   // Handle search input
   const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    debug.log('Search input changed', { 
+    debug.log("Search input changed", {
       previousValue: searchQuery,
       newValue: value,
-      length: value.length,
-      timestamp: new Date().toISOString()
+      length: value.length
     });
     setSearchQuery(value);
   }, [searchQuery]);
 
   // Handle user selection
-  const handleUserSelect = useCallback((userId: string) => {
-    debug.log('User selected for payment', {
-      userId,
-      searchQuery,
-      fromConversation: !!conversationId,
-      conversationId,
-      timestamp: new Date().toISOString()
+  const handleUserSelect = useCallback((user: User) => {
+    debug.log("User selected for payment", {
+      userId: user._id,
+      username: user.username,
+      fromConversation: !!location.state?.conversationId
     });
-    navigate(`/amount/${userId}`, {
-      state: { conversationId }
+
+    navigate(`/amount/${user._id}`, {
+      state: { 
+        conversationId: location.state?.conversationId,
+        from: 'search',
+        recipientInfo: {
+          id: user._id,
+          fullName: user.fullName,
+          username: user.username,
+          profileImageUrl: user.profileImageUrl
+        }
+      }
     });
-  }, [navigate, searchQuery, conversationId]);
+  }, [navigate, location.state?.conversationId]);
 
   return (
     <div className="min-h-screen flex flex-col bg-black text-white">
@@ -155,7 +207,7 @@ const Send = () => {
             {searchResults.map((user) => (
               <button
                 key={user._id}
-                onClick={() => handleUserSelect(user._id)}
+                onClick={() => handleUserSelect(user)}
                 className="w-full p-4 flex items-start space-x-4 hover:bg-zinc-900/50 transition-all"
               >
                 <Avatar className="h-12 w-12 bg-blue-600 flex-shrink-0 flex items-center justify-center text-lg font-medium">

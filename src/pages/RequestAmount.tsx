@@ -39,8 +39,9 @@ const RequestAmount = () => {
   const { id: recipientId } = useParams();
   const { toast } = useToast();
 
-  // Extract conversation ID from state with validation
+  // Extract conversation ID and recipient info from state with validation
   const conversationId = location.state?.conversationId;
+  const recipientInfo = location.state?.recipientInfo;
 
   // Log initial mount
   useEffect(() => {
@@ -49,33 +50,52 @@ const RequestAmount = () => {
       recipientId,
       conversationId,
       navigationSource: location.state?.from,
-      hasLocationState: !!location.state
+      hasLocationState: !!location.state,
+      hasRecipientInfo: !!recipientInfo,
+      recipientInfo
     });
     debug.endGroup();
-  }, [recipientId, location.state]);
+  }, [recipientId, location.state, recipientInfo]);
 
   // Get current user
   const currentUser = useQuery(api.users.getCurrentUser);
 
-  // Fetch recipient details
-  const users = useQuery(api.conversations.searchUsers, { query: "" });
-  const selectedUser = users?.find(u => u._id === recipientId);
+  // Get conversation details if ID exists
+  const conversation = useQuery(
+    api.messages.getMessages,
+    conversationId ? { conversationId, limit: 1 } : "skip"
+  );
+
+  // Get other participant details if in conversation context
+  const otherParticipant = useQuery(
+    api.users.getOtherParticipant,
+    conversationId ? { conversationId } : "skip"
+  );
+
+  // Determine selected user from various sources
+  const selectedUser = recipientInfo ? {
+    _id: recipientInfo.id,
+    fullName: recipientInfo.fullName,
+    username: recipientInfo.username,
+    profileImageUrl: recipientInfo.profileImageUrl
+  } : otherParticipant;
 
   // Log when user data changes
   useEffect(() => {
-    if (users) {
-      debug.log("Users data updated", {
-        usersCount: users.length,
-        hasSelectedUser: !!selectedUser,
-        selectedUserId: recipientId,
-        currentUserId: currentUser?._id,
-        selectedUserDetails: selectedUser ? {
-          fullName: selectedUser.fullName,
-          username: selectedUser.username
-        } : null
-      });
-    }
-  }, [users, selectedUser, recipientId, currentUser]);
+    debug.startGroup("User Data Update");
+    debug.log("User context", {
+      currentUserId: currentUser?._id,
+      recipientId,
+      hasSelectedUser: !!selectedUser,
+      fromConversation: !!conversationId,
+      selectedUserDetails: selectedUser ? {
+        fullName: selectedUser.fullName,
+        username: selectedUser.username
+      } : null,
+      source: recipientInfo ? 'navigation_state' : conversationId ? 'conversation' : 'direct'
+    });
+    debug.endGroup();
+  }, [currentUser, selectedUser, recipientId, conversationId, recipientInfo]);
 
   // Create payment request mutation
   const createRequest = useMutation(api.paymentRequests.createChatPaymentRequest);
@@ -108,16 +128,18 @@ const RequestAmount = () => {
   };
 
   const handleRequest = async () => {
-    if (!currentUser || !recipientId || !conversationId) {
+    if (!currentUser || !recipientId || !conversationId || !selectedUser) {
       debug.error("Request validation failed", {
         hasCurrentUser: !!currentUser,
         hasRecipientId: !!recipientId,
         hasConversationId: !!conversationId,
+        hasSelectedUser: !!selectedUser,
         amount,
         selectedUser: selectedUser ? {
           id: selectedUser._id,
           fullName: selectedUser.fullName
-        } : null
+        } : null,
+        source: recipientInfo ? 'navigation_state' : conversationId ? 'conversation' : 'direct'
       });
       
       toast({
@@ -135,9 +157,10 @@ const RequestAmount = () => {
       amount,
       conversationId,
       selectedUser: {
-        id: selectedUser?._id,
-        fullName: selectedUser?.fullName
-      }
+        id: selectedUser._id,
+        fullName: selectedUser.fullName
+      },
+      source: recipientInfo ? 'navigation_state' : 'conversation'
     });
 
     setIsLoading(true);
@@ -160,7 +183,7 @@ const RequestAmount = () => {
         recipientId,
         conversationId,
         amount: amountInSats,
-        type: "lightning", // Default to lightning for now
+        type: "lightning",
         description: `Payment request for ${amountInSats} sats`
       });
 
@@ -168,12 +191,12 @@ const RequestAmount = () => {
         requestId: result.requestId,
         messageId: result.messageId,
         amount: amountInSats,
-        recipientName: selectedUser?.fullName
+        recipientName: selectedUser.fullName
       });
 
       toast({
         title: "Request Sent",
-        description: `Requested ${amount} sats from ${selectedUser?.fullName}`,
+        description: `Requested ${amount} sats from ${selectedUser.fullName}`,
       });
 
       debug.log("Navigating to conversation", {
@@ -194,7 +217,7 @@ const RequestAmount = () => {
             id: selectedUser._id,
             fullName: selectedUser.fullName
           } : null,
-          navigationSource: location.state?.from
+          source: recipientInfo ? 'navigation_state' : 'conversation'
         }
       });
       

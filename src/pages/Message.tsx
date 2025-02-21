@@ -207,13 +207,63 @@ const Message = () => {
 
   // Log when send action is clicked
   const handleSendClick = () => {
+    if (!otherParticipant) {
+      debug.error('Cannot send payment - recipient not found', {
+        conversationId,
+        hasOtherParticipant: false
+      });
+      return;
+    }
+
     debug.log('Send payment action clicked', {
       conversationId,
-      recipientId: otherParticipant?._id,
-      recipientName: otherParticipant?.fullName,
+      recipientId: otherParticipant._id,
+      recipientName: otherParticipant.fullName,
       timestamp: new Date().toISOString()
     });
-    navigate(`/send/${conversationId}`);
+
+    navigate(`/amount/${otherParticipant._id}`, {
+      state: { 
+        conversationId,
+        from: 'chat',
+        recipientInfo: {
+          id: otherParticipant._id,
+          fullName: otherParticipant.fullName,
+          username: otherParticipant.username,
+          profileImageUrl: otherParticipant.profileImageUrl
+        }
+      }
+    });
+  };
+
+  const handleRequestClick = () => {
+    if (!otherParticipant) {
+      debug.error('Cannot request payment - recipient not found', {
+        conversationId,
+        hasOtherParticipant: false
+      });
+      return;
+    }
+
+    debug.log('Request payment action clicked', {
+      conversationId,
+      recipientId: otherParticipant._id,
+      recipientName: otherParticipant.fullName,
+      timestamp: new Date().toISOString()
+    });
+
+    navigate(`/request/${otherParticipant._id}`, {
+      state: { 
+        conversationId,
+        from: 'chat',
+        recipientInfo: {
+          id: otherParticipant._id,
+          fullName: otherParticipant.fullName,
+          username: otherParticipant.username,
+          profileImageUrl: otherParticipant.profileImageUrl
+        }
+      }
+    });
   };
 
   const renderMessage = (msg: Message) => {
@@ -405,7 +455,7 @@ const Message = () => {
                 <span>Send</span>
               </button>
               <button 
-                onClick={() => navigate(`/request/${conversationId}`)} 
+                onClick={handleRequestClick}
                 className="flex-1 bg-zinc-800/80 text-white rounded-full py-2.5 px-4 font-medium hover:bg-zinc-700 transition-colors flex items-center justify-center gap-2"
               >
                 <QrCode className="h-5 w-5" />
