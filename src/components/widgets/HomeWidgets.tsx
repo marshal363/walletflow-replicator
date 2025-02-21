@@ -27,22 +27,22 @@ import { useNavigate } from "react-router-dom";
 
 const quickActions = {
   spending: [
-    { icon: Send, label: 'Send' },
-    { icon: ArrowDownLeft, label: 'Receive' },
-    { icon: CreditCard, label: 'Card' },
-    { icon: QrCode, label: 'Scan' }
+    { icon: Send, label: 'Send', description: 'Send funds to another wallet' },
+    { icon: ArrowDownLeft, label: 'Receive', description: 'Receive funds from others' },
+    { icon: CreditCard, label: 'Card', description: 'Manage your card settings' },
+    { icon: QrCode, label: 'Scan', description: 'Scan QR code to pay' }
   ],
   savings: [
-    { icon: ArrowUpRight, label: 'Deposit' },
-    { icon: ArrowDownLeft, label: 'Withdraw' },
-    { icon: Lock, label: 'Keys' },
-    { icon: QrCode, label: 'Scan' }
+    { icon: ArrowUpRight, label: 'Deposit', description: 'Add funds to savings' },
+    { icon: ArrowDownLeft, label: 'Withdraw', description: 'Withdraw from savings' },
+    { icon: Lock, label: 'Keys', description: 'Manage security keys' },
+    { icon: QrCode, label: 'Scan', description: 'Scan QR code to pay' }
   ],
   multisig: [
-    { icon: ArrowUpRight, label: 'Deposit' },
-    { icon: ArrowDownLeft, label: 'Withdraw' },
-    { icon: Lock, label: 'Keys' },
-    { icon: QrCode, label: 'Scan' }
+    { icon: ArrowUpRight, label: 'Deposit', description: 'Add funds to multisig' },
+    { icon: ArrowDownLeft, label: 'Withdraw', description: 'Withdraw from multisig' },
+    { icon: Lock, label: 'Keys', description: 'Manage multisig keys' },
+    { icon: QrCode, label: 'Scan', description: 'Scan QR code to pay' }
   ]
 };
 
@@ -67,11 +67,13 @@ const walletColors = {
 interface HomeWidgetsProps {
   selectedWalletId: string;
   onWalletSelect: (id: string) => void;
+  isLoading?: boolean;
 }
 
 export default function HomeWidgets({
   selectedWalletId: externalSelectedWalletId,
   onWalletSelect: externalOnWalletSelect,
+  isLoading: externalIsLoading = false,
 }: HomeWidgetsProps) {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -264,6 +266,78 @@ export default function HomeWidgets({
     }
   };
 
+  // Enhanced empty state component
+  const TransactionEmptyState: React.FC<{ onDeposit: () => void }> = ({ onDeposit }) => (
+  <motion.div 
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    className="flex flex-col items-center justify-center py-8 px-4 text-center"
+  >
+    <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mb-4">
+      <motion.div
+        animate={{ scale: [1, 1.1, 1] }}
+        transition={{ repeat: Infinity, duration: 2 }}
+      >
+        📊
+      </motion.div>
+    </div>
+    <h3 className="text-lg font-medium mb-2">No Activity Yet</h3>
+    <p className="text-sm text-zinc-500 mb-4">Start by making your first transaction</p>
+    <Button 
+      variant="outline"
+      className="gap-2"
+      onClick={onDeposit}
+    >
+      <ArrowUpRight className="h-4 w-4" />
+      Make First Deposit
+    </Button>
+  </motion.div>
+);
+
+// Enhanced quick action button component
+interface QuickActionProps {
+  action: {
+    icon: React.FC<{ className?: string }>;
+    label: string;
+    description: string;
+  };
+  walletType: keyof typeof walletColors;
+  onClick: () => void;
+}
+
+const QuickActionButton: React.FC<QuickActionProps> = ({ action, walletType, onClick }) => (
+  <button 
+    className="group flex flex-col items-center gap-2 relative"
+    onClick={onClick}
+    aria-label={action.label}
+  >
+    <div className="w-12 h-12 bg-zinc-900 rounded-full flex items-center justify-center transition-colors group-hover:bg-zinc-800 group-active:bg-zinc-700">
+      <action.icon className={`h-5 w-5 ${walletColors[walletType].accent} transition-transform group-hover:scale-110`} />
+    </div>
+    <span className="text-xs group-hover:text-white transition-colors">{action.label}</span>
+    <div className="absolute invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity bg-zinc-800 text-xs text-white rounded px-2 py-1 -top-8">
+      {action.description}
+    </div>
+  </button>
+);
+
+// Helper functions
+const formatLastTransaction = (date: string): string => {
+  const txDate = new Date(date);
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return txDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+
+const formatBalance = (balance: number, currency: string): string => {
+  if (balance === 0) return '0 sats (₿0.00000000)';
+  return `${balance.toLocaleString()} sats (₿${(balance / 100000000).toFixed(8)})`;
+};
+
   return (
     <div className="space-y-6">
       {/* Suggested Actions Widget */}
@@ -319,8 +393,8 @@ export default function HomeWidgets({
                   <WalletCard
                     type={wallet.type}
                     name={wallet.name}
-                    balance={formatCurrency(wallet.balance || 0, wallet.currency)}
-                    lastTransaction={new Date(wallet.lastUpdated).toLocaleDateString()}
+                    balance={formatBalance(wallet.balance || 0, wallet.currency)}
+                    lastTransaction={formatLastTransaction(wallet.lastUpdated)}
                     onClick={() => handleWalletSelect(wallet._id.toString())}
                   />
                 </CarouselItem>
@@ -339,12 +413,12 @@ export default function HomeWidgets({
         {currentWallet && (
           <div className="grid grid-cols-4 gap-4 px-4">
             {currentActions.map((action, index) => (
-              <button key={index} className="flex flex-col items-center gap-2">
-                <div className="w-12 h-12 bg-zinc-900 rounded-full flex items-center justify-center">
-                  <action.icon className={`h-5 w-5 ${walletColors[currentWallet.type].accent}`} />
-                </div>
-                <span className="text-xs">{action.label}</span>
-              </button>
+              <QuickActionButton
+                key={index}
+                action={action}
+                walletType={currentWallet.type}
+                onClick={() => handleActionClick(action.label.toLowerCase())}
+              />
             ))}
           </div>
         )}
@@ -356,12 +430,16 @@ export default function HomeWidgets({
         animate={{ opacity: 1, y: 0 }}
         className="px-4"
       >
-        <TransactionList
-          wallets={formattedWallets}
-          selectedWalletId={internalSelectedWalletId}
-          onWalletSelect={handleWalletSelect}
-          onViewAll={() => {/* Handle view all */}}
-        />
+        {!wallets?.length ? (
+          <TransactionEmptyState onDeposit={() => handleActionClick('deposit')} />
+        ) : (
+          <TransactionList
+            wallets={formattedWallets}
+            selectedWalletId={internalSelectedWalletId}
+            onWalletSelect={handleWalletSelect}
+            onViewAll={() => navigate('/transactions')}
+          />
+        )}
       </motion.div>
 
       {/* Spending Trends Widget */}
