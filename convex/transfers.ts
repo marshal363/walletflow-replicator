@@ -212,12 +212,16 @@ export const transferSats = mutation({
     conversationId: v.optional(v.id("conversations")),
   },
   handler: async (ctx, args) => {
-    // Initial logging of transfer request
-    debug.log("Starting transfer", {
+    // Enhanced logging for transfer request
+    debug.log("Transfer request initiated", {
+      type: "TRANSFER_START",
       sourceWalletId: args.sourceWalletId,
       destinationUserId: args.destinationUserId,
       amount: args.amount,
-      providedConversationId: args.conversationId,
+      description: args.description,
+      messageId: args.messageId,
+      conversationId: args.conversationId,
+      timestamp: new Date().toISOString()
     });
 
     // 1. Validate source wallet and amount
@@ -361,13 +365,18 @@ export const transferSats = mutation({
         status: "completed",
       });
 
-      debug.log("Transfer completed", {
-        success: true,
+      // Enhanced logging for transfer completion
+      debug.log("Transfer execution completed", {
+        type: "TRANSFER_COMPLETE",
         transferId: transfer,
+        sourceWalletId: args.sourceWalletId,
+        destinationWalletId: destinationWallet._id,
+        amount: args.amount,
+        status: "completed",
         conversationId: conversation._id,
         sentMessageId: sentMessage,
         receivedMessageId: receivedMessage,
-        isExistingConversation: !!args.conversationId
+        timestamp: new Date().toISOString()
       });
 
       return {

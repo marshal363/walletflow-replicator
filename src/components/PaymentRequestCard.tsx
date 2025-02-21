@@ -3,48 +3,45 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { Id } from "@convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
-import { ArrowUpRight, Loader2, Clock, Check, X } from "lucide-react";
+import { ArrowUpRight, Loader2, Clock, Check, X, Zap } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { formatDistanceToNow } from "date-fns";
+import { useUser } from "@clerk/clerk-react";
 
 interface PaymentRequestCardProps {
-  requestId: Id<"paymentRequests">;
   messageId: Id<"messages">;
   onAction?: (action: string) => void;
 }
 
 export function PaymentRequestCard({
-  requestId,
   messageId,
   onAction
 }: PaymentRequestCardProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const { user } = useUser();
 
-  // Get request details
-  const details = useQuery(api.paymentRequests.getRequestDetails, {
-    requestId
+  // Get message details
+  const message = useQuery(api.messages.getMessage, {
+    messageId
   });
-
-  // Get request history
-  const history = useQuery(api.paymentRequests.getRequestHistory, {
-    requestId
-  });
-
-  // Mutations
-  const handleAction = useMutation(api.paymentRequests.handleRequestAction);
-  const transfer = useMutation(api.transfers.transferSats);
 
   // Get current user's spending wallet
   const currentUserWallet = useQuery(api.wallets.getCurrentUserSpendingWallet);
 
-  if (!details || !history) return null;
+  // Mutations
+  const updateStatus = useMutation(api.messages.updatePaymentRequestStatus);
+  const transfer = useMutation(api.transfers.transferSats);
 
-  const { request, message, requester, recipient, isExpired } = details;
+  if (!message || !user) return null;
 
-  // Calculate USD value (this should come from your price service)
-  const usdAmount = (request.amount * 0.00043).toFixed(2); // Example rate
+  const isRequester = message.metadata.senderId === user.id;
+  const isRecipient = message.metadata.recipientId === user.id;
+  const status = message.metadata.requestStatus;
+  const amount = message.metadata.amount;
+  const usdAmount = (amount * 0.00043).toFixed(2);
+  const isExpired = message.metadata.expiresAt && new Date(message.metadata.expiresAt) < new Date();
 
   const handleApprove = async () => {
     if (!currentUserWallet) {
@@ -59,18 +56,17 @@ export function PaymentRequestCard({
     setIsLoading(true);
     try {
       // First update the request status
-      await handleAction({
-        requestId,
+      await updateStatus({
         messageId,
-        action: "approve"
+        newStatus: "approved"
       });
 
       // Then initiate the transfer
       const result = await transfer({
         sourceWalletId: currentUserWallet._id,
-        destinationUserId: request.requesterId,
-        amount: request.amount,
-        description: request.metadata.description,
+        destinationUserId: message.metadata.senderId,
+        amount: message.metadata.amount,
+        description: message.content,
         messageId,
         conversationId: message.conversationId
       });
@@ -78,16 +74,8 @@ export function PaymentRequestCard({
       if (result.success) {
         toast({
           title: "Payment Sent",
-          description: `${request.amount} sats sent to ${requester.fullName}`,
+          description: `${amount} sats sent successfully`,
         });
-
-        // Update request status to completed
-        await handleAction({
-          requestId,
-          messageId,
-          action: "approve"
-        });
-
         onAction?.("approve");
       }
     } catch (error) {
@@ -99,11 +87,9 @@ export function PaymentRequestCard({
       });
 
       // Revert request status
-      await handleAction({
-        requestId,
+      await updateStatus({
         messageId,
-        action: "decline",
-        note: "Payment failed"
+        newStatus: "declined"
       });
     } finally {
       setIsLoading(false);
@@ -113,17 +99,15 @@ export function PaymentRequestCard({
   const handleDecline = async () => {
     setIsLoading(true);
     try {
-      await handleAction({
-        requestId,
+      await updateStatus({
         messageId,
-        action: "decline"
+        newStatus: "declined"
       });
       
       toast({
         title: "Request Declined",
         description: "The payment request has been declined",
       });
-
       onAction?.("decline");
     } catch (error) {
       console.error("Failed to decline:", error);
@@ -140,17 +124,15 @@ export function PaymentRequestCard({
   const handleCancel = async () => {
     setIsLoading(true);
     try {
-      await handleAction({
-        requestId,
+      await updateStatus({
         messageId,
-        action: "cancel"
+        newStatus: "cancelled"
       });
       
       toast({
         title: "Request Cancelled",
         description: "The payment request has been cancelled",
       });
-
       onAction?.("cancel");
     } catch (error) {
       console.error("Failed to cancel:", error);
@@ -164,35 +146,8 @@ export function PaymentRequestCard({
     }
   };
 
-  const handleRemind = async () => {
-    setIsLoading(true);
-    try {
-      await handleAction({
-        requestId,
-        messageId,
-        action: "remind"
-      });
-      
-      toast({
-        title: "Reminder Sent",
-        description: "A reminder has been sent to the recipient",
-      });
-
-      onAction?.("remind");
-    } catch (error) {
-      console.error("Failed to send reminder:", error);
-      toast({
-        title: "Error",
-        description: "Failed to send reminder",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const getStatusIcon = () => {
-    switch (request.status) {
+    switch (status) {
       case "approved":
         return <Check className="h-5 w-5 text-emerald-500" />;
       case "declined":
@@ -205,7 +160,7 @@ export function PaymentRequestCard({
   };
 
   const getStatusColor = () => {
-    switch (request.status) {
+    switch (status) {
       case "approved":
         return "text-emerald-500";
       case "declined":
@@ -219,7 +174,7 @@ export function PaymentRequestCard({
 
   const getStatusText = () => {
     if (isExpired) return "Expired";
-    switch (request.status) {
+    switch (status) {
       case "approved":
         return "Approved";
       case "declined":
@@ -231,11 +186,12 @@ export function PaymentRequestCard({
     }
   };
 
-  return (
+  // Render different views based on user role
+  const renderRequesterView = () => (
     <div className="bg-zinc-900 rounded-lg p-4 max-w-[280px] space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <ArrowUpRight className="h-5 w-5 text-emerald-500" />
+          <Zap className="h-5 w-5 text-emerald-500" />
           <span className="text-lg font-medium text-white">Payment Request</span>
         </div>
         {getStatusIcon()}
@@ -243,7 +199,7 @@ export function PaymentRequestCard({
 
       <div>
         <div className="text-2xl font-bold text-white">
-          {request.amount} sats
+          {amount} sats
         </div>
         <div className="text-zinc-400 text-sm">
           ≈ ${usdAmount} USD
@@ -254,7 +210,64 @@ export function PaymentRequestCard({
         {getStatusText()}
       </div>
 
-      {request.status === "pending" && !isExpired && (
+      {status === "pending" && !isExpired && (
+        <Button
+          variant="ghost"
+          className="w-full text-zinc-400 hover:text-white hover:bg-zinc-800"
+          onClick={handleCancel}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            "Cancel Request"
+          )}
+        </Button>
+      )}
+
+      {isExpired && (
+        <div className="text-zinc-500 text-sm">
+          This request has expired
+        </div>
+      )}
+
+      <div className="flex items-center justify-between text-zinc-500 text-xs">
+        <span>
+          {formatDistanceToNow(new Date(message.timestamp), { addSuffix: true })}
+        </span>
+        {status === "pending" && !isExpired && message.metadata.expiresAt && (
+          <span>
+            Expires {formatDistanceToNow(new Date(message.metadata.expiresAt), { addSuffix: true })}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderRecipientView = () => (
+    <div className="bg-zinc-900 rounded-lg p-4 max-w-[280px] space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Zap className="h-5 w-5 text-emerald-500" />
+          <span className="text-lg font-medium text-white">Payment Request</span>
+        </div>
+        {getStatusIcon()}
+      </div>
+
+      <div>
+        <div className="text-2xl font-bold text-white">
+          {amount} sats
+        </div>
+        <div className="text-zinc-400 text-sm">
+          ≈ ${usdAmount} USD
+        </div>
+      </div>
+
+      <div className={cn("text-sm font-medium", getStatusColor())}>
+        {getStatusText()}
+      </div>
+
+      {status === "pending" && !isExpired && (
         <div className="flex flex-col gap-2">
           <Button
             className="w-full bg-emerald-600 hover:bg-emerald-500 text-white"
@@ -278,34 +291,24 @@ export function PaymentRequestCard({
         </div>
       )}
 
-      {request.status === "pending" && isExpired && (
+      {isExpired && (
         <div className="text-zinc-500 text-sm">
           This request has expired
         </div>
       )}
 
-      {request.metadata.declineReason && (
-        <div className="text-zinc-500 text-sm">
-          Reason: {request.metadata.declineReason}
-        </div>
-      )}
-
-      {request.metadata.cancelReason && (
-        <div className="text-zinc-500 text-sm">
-          Reason: {request.metadata.cancelReason}
-        </div>
-      )}
-
       <div className="flex items-center justify-between text-zinc-500 text-xs">
         <span>
-          {formatDistanceToNow(new Date(request.createdAt), { addSuffix: true })}
+          {formatDistanceToNow(new Date(message.timestamp), { addSuffix: true })}
         </span>
-        {request.status === "pending" && !isExpired && (
+        {status === "pending" && !isExpired && message.metadata.expiresAt && (
           <span>
-            Expires {formatDistanceToNow(new Date(request.metadata.expiresAt), { addSuffix: true })}
+            Expires {formatDistanceToNow(new Date(message.metadata.expiresAt), { addSuffix: true })}
           </span>
         )}
       </div>
     </div>
   );
+
+  return isRequester ? renderRequesterView() : renderRecipientView();
 } 
