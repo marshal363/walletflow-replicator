@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { debug as logger } from "./debug";
 
 // Debug logger that accepts both query and mutation contexts
 const debug = {
@@ -17,6 +18,24 @@ const debug = {
     });
   }
 };
+
+// Define message metadata types
+interface MessageMetadata {
+  amount?: number;
+  senderId?: Id<"users">;
+  recipientId?: Id<"users">;
+  transferId?: Id<"transferTransactions">;
+  requestId?: Id<"paymentRequests">;
+  visibility?: "sender_only" | "recipient_only" | "both";
+  requestStatus?: "pending" | "approved" | "declined" | "cancelled";
+  replyTo?: Id<"messages">;
+  attachments?: string[];
+  reactions?: Array<{
+    type: string;
+    userId: Id<"users">;
+  }>;
+  expiresAt?: string;
+}
 
 // Get recent conversations for the current user
 export const getRecentConversations = query({
@@ -121,7 +140,7 @@ export const getMessages = query({
   },
   handler: async (ctx, args) => {
     try {
-      debug.log("Fetching messages", { 
+      logger.log("Fetching messages", { 
         conversationId: args.conversationId,
         limit: args.limit,
         cursor: args.cursor 
@@ -139,17 +158,17 @@ export const getMessages = query({
       
       if (!user) throw new Error("User not found");
 
-      debug.log("Current user found", { userId: user._id });
+      logger.log("Current user found", { userId: user._id });
 
       // Verify user is part of conversation
       const conversation = await ctx.db.get(args.conversationId);
       if (!conversation) {
-        debug.error("Conversation not found", { conversationId: args.conversationId });
+        logger.error("Conversation not found", { conversationId: args.conversationId });
         throw new Error("Conversation not found");
       }
 
       if (!conversation.participants.includes(user._id)) {
-        debug.error("User not in conversation", { 
+        logger.error("User not in conversation", { 
           userId: user._id,
           conversationId: args.conversationId 
         });
@@ -163,21 +182,35 @@ export const getMessages = query({
         .filter((q) => q.eq(q.field("conversationId"), args.conversationId))
         .collect();
 
-      // Filter messages based on visibility and user role
+      // Enhanced message filtering with payment request handling
       const filteredMessages = messages.filter(message => {
-        // If message has no visibility setting or is set to "both", show it
+        logger.log("Filtering message visibility", {
+          type: "MESSAGE_FILTER",
+          messageId: message._id,
+          messageType: message.type,
+          visibility: message.metadata.visibility,
+          userId: user._id,
+          isSender: message.senderId === user._id,
+          isRecipient: message.metadata.recipientId === user._id,
+          timestamp: new Date().toISOString()
+        });
+
+        // Payment requests are always visible to both parties
+        if (message.type === "payment_request") {
+          return true;
+        }
+
+        // Handle visibility based on metadata
         if (!message.metadata.visibility || message.metadata.visibility === "both") {
           return true;
         }
 
-        // For payment messages, check visibility based on user role
-        if (message.type === "payment_sent" || message.type === "payment_received") {
-          if (message.metadata.visibility === "sender_only") {
-            return message.metadata.senderId === user._id;
-          }
-          if (message.metadata.visibility === "recipient_only") {
-            return message.metadata.recipientId === user._id;
-          }
+        if (message.type === "payment_sent" && message.metadata.visibility === "sender_only") {
+          return message.metadata.senderId === user._id;
+        }
+
+        if (message.type === "payment_received" && message.metadata.visibility === "recipient_only") {
+          return message.metadata.recipientId === user._id;
         }
 
         return true;
@@ -188,7 +221,7 @@ export const getMessages = query({
         .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
         .slice(-1 * (args.limit ?? 50));
 
-      debug.log("Messages filtered and sorted", { 
+      logger.log("Messages filtered and sorted", { 
         conversationId: args.conversationId,
         totalMessages: messages.length,
         filteredCount: filteredMessages.length,
@@ -202,7 +235,12 @@ export const getMessages = query({
           : null,
       };
     } catch (error) {
-      debug.error("Error fetching messages", error);
+      logger.error("Error fetching messages", {
+        type: "MESSAGE_FETCH_ERROR",
+        error: error instanceof Error ? error.message : "Unknown error",
+        conversationId: args.conversationId,
+        timestamp: new Date().toISOString()
+      });
       throw error;
     }
   },
@@ -217,22 +255,44 @@ export const sendMessage = mutation({
       v.literal("text"),
       v.literal("payment_request"),
       v.literal("payment_sent"),
-      v.literal("payment_received"),
-      v.literal("system")
+      v.literal("payment_received")
     ),
     metadata: v.optional(v.object({
       amount: v.optional(v.number()),
       recipientId: v.optional(v.id("users")),
       senderId: v.optional(v.id("users")),
       transferId: v.optional(v.id("transferTransactions")),
+      requestStatus: v.optional(v.union(
+        v.literal("pending"),
+        v.literal("approved"),
+        v.literal("declined"),
+        v.literal("cancelled")
+      )),
+      requestId: v.optional(v.id("paymentRequests")),
+      visibility: v.optional(v.union(
+        v.literal("sender_only"),
+        v.literal("recipient_only"),
+        v.literal("both")
+      )),
+      replyTo: v.optional(v.id("messages")),
+      attachments: v.optional(v.array(v.string())),
+      reactions: v.optional(v.object({
+        count: v.number(),
+        type: v.string(),
+        users: v.array(v.id("users"))
+      })),
+      lastUpdated: v.optional(v.string()),
+      statusUpdatedBy: v.optional(v.id("users")),
     })),
   },
   handler: async (ctx, args) => {
     try {
-      debug.log("Sending message", { 
+      logger.log("Message creation started", {
+        type: "MESSAGE_CREATE_START",
         conversationId: args.conversationId,
-        type: args.type,
-        contentLength: args.content.length 
+        messageType: args.type,
+        metadata: args.metadata,
+        timestamp: new Date().toISOString()
       });
 
       const identity = await ctx.auth.getUserIdentity();
@@ -246,24 +306,85 @@ export const sendMessage = mutation({
       
       if (!user) throw new Error("User not found");
 
-      debug.log("Sender found", { userId: user._id });
+      logger.log("Sender found", { userId: user._id });
 
       // Validate conversation exists and user is participant
       const conversation = await ctx.db.get(args.conversationId);
       if (!conversation) {
-        debug.error("Conversation not found", { conversationId: args.conversationId });
+        logger.error("Conversation not found", { conversationId: args.conversationId });
         throw new Error("Conversation not found");
       }
 
       if (!conversation.participants.includes(user._id)) {
-        debug.error("User not in conversation", { 
+        logger.error("User not in conversation", { 
           userId: user._id,
           conversationId: args.conversationId 
         });
         throw new Error("Not authorized to send messages in this conversation");
       }
 
-      // Create message with proper metadata based on type
+      // Enhanced metadata for payment requests
+      let messageMetadata: {
+        replyTo?: Id<"messages">;
+        attachments?: string[];
+        reactions?: {
+          count: number;
+          type: string;
+          users: Id<"users">[];
+        };
+        visibility: "sender_only" | "recipient_only" | "both";
+        amount?: number;
+        recipientId?: Id<"users">;
+        senderId?: Id<"users">;
+        transferId?: Id<"transferTransactions">;
+        requestStatus?: "pending" | "approved" | "declined" | "cancelled";
+        requestId?: Id<"paymentRequests">;
+        requestTimestamp?: string;
+        expiresAt?: string;
+        requestType?: "lightning";
+        requestContext?: {
+          initiatedBy: Id<"users">;
+          initiatorRole: string;
+          recipientRole: string;
+        };
+        lastUpdated?: string;
+        statusUpdatedBy?: Id<"users">;
+      } = {
+        replyTo: args.metadata?.replyTo,
+        attachments: args.metadata?.attachments,
+        reactions: args.metadata?.reactions,
+        visibility: "both" as const,
+        amount: args.metadata?.amount,
+        recipientId: args.metadata?.recipientId,
+        senderId: args.metadata?.senderId,
+        transferId: args.metadata?.transferId,
+      };
+
+      // Add specific metadata for payment requests
+      if (args.type === "payment_request") {
+        messageMetadata = {
+          ...messageMetadata,
+          requestStatus: "pending" as const,
+          requestId: args.metadata?.requestId,
+          requestTimestamp: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          requestType: "lightning" as const,
+          requestContext: {
+            initiatedBy: user._id,
+            initiatorRole: "sender",
+            recipientRole: "receiver"
+          }
+        };
+
+        logger.log("Creating payment request message", {
+          type: "PAYMENT_REQUEST_CREATE",
+          metadata: messageMetadata,
+          userId: user._id,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Create message with enhanced metadata
       const message = await ctx.db.insert("messages", {
         conversationId: args.conversationId,
         senderId: user._id,
@@ -271,26 +392,16 @@ export const sendMessage = mutation({
         type: args.type,
         status: "sent",
         timestamp: new Date().toISOString(),
-        metadata: {
-          replyTo: undefined,
-          attachments: undefined,
-          reactions: undefined,
-          // Include payment metadata if it's a payment-related message
-          ...(args.type === "payment_sent" || args.type === "payment_received" || args.type === "payment_request" 
-            ? {
-                amount: args.metadata?.amount,
-                recipientId: args.metadata?.recipientId,
-                senderId: args.metadata?.senderId,
-                transferId: args.metadata?.transferId,
-              }
-            : {}),
-        },
+        metadata: messageMetadata,
       });
 
-      debug.log("Message created", { 
+      logger.log("Message created successfully", {
+        type: "MESSAGE_CREATE_SUCCESS",
         messageId: message,
-        type: args.type,
-        metadata: args.metadata 
+        messageType: args.type,
+        visibility: messageMetadata.visibility,
+        metadata: messageMetadata,
+        timestamp: new Date().toISOString()
       });
 
       // Update conversation with last message info
@@ -300,14 +411,20 @@ export const sendMessage = mutation({
         updatedAt: new Date().toISOString()
       });
 
-      debug.log("Conversation updated", { 
+      logger.log("Conversation updated", { 
         conversationId: args.conversationId,
         lastMessageId: message
       });
 
       return message;
     } catch (error) {
-      debug.error("Error sending message", error);
+      logger.error("Message creation failed", {
+        type: "MESSAGE_CREATE_ERROR",
+        error: error instanceof Error ? error.message : "Unknown error",
+        conversationId: args.conversationId,
+        messageType: args.type,
+        timestamp: new Date().toISOString()
+      });
       throw error;
     }
   },
@@ -320,7 +437,7 @@ export const markMessagesAsDelivered = mutation({
   },
   handler: async (ctx, args) => {
     try {
-      debug.log("Starting to mark messages as delivered", { 
+      logger.log("Starting to mark messages as delivered", { 
         conversationId: args.conversationId 
       });
 
@@ -335,17 +452,17 @@ export const markMessagesAsDelivered = mutation({
       
       if (!user) throw new Error("User not found");
 
-      debug.log("User found", { userId: user._id });
+      logger.log("User found", { userId: user._id });
 
       // Verify user is part of conversation
       const conversation = await ctx.db.get(args.conversationId);
       if (!conversation) {
-        debug.error("Conversation not found", { conversationId: args.conversationId });
+        logger.error("Conversation not found", { conversationId: args.conversationId });
         throw new Error("Conversation not found");
       }
 
       if (!conversation.participants.includes(user._id)) {
-        debug.error("User not in conversation", { 
+        logger.error("User not in conversation", { 
           userId: user._id,
           conversationId: args.conversationId 
         });
@@ -365,7 +482,7 @@ export const markMessagesAsDelivered = mutation({
         )
         .collect();
 
-      debug.log("Found sent messages", { count: sentMessages.length });
+      logger.log("Found sent messages", { count: sentMessages.length });
 
       // Mark all messages as delivered
       const updates = await Promise.all(
@@ -377,14 +494,14 @@ export const markMessagesAsDelivered = mutation({
         })
       );
 
-      debug.log("Messages marked as delivered", { 
+      logger.log("Messages marked as delivered", { 
         count: updates.length,
         messageIds: updates 
       });
 
       return updates;
     } catch (error) {
-      debug.error("Error marking messages as delivered", error);
+      logger.error("Error marking messages as delivered", error);
       throw error;
     }
   },
@@ -397,7 +514,7 @@ export const markMessagesAsRead = mutation({
   },
   handler: async (ctx, args) => {
     try {
-      debug.log("Starting to mark messages as read", { 
+      logger.log("Starting to mark messages as read", { 
         conversationId: args.conversationId 
       });
 
@@ -412,17 +529,17 @@ export const markMessagesAsRead = mutation({
       
       if (!user) throw new Error("User not found");
 
-      debug.log("User found", { userId: user._id });
+      logger.log("User found", { userId: user._id });
 
       // Verify user is part of conversation
       const conversation = await ctx.db.get(args.conversationId);
       if (!conversation) {
-        debug.error("Conversation not found", { conversationId: args.conversationId });
+        logger.error("Conversation not found", { conversationId: args.conversationId });
         throw new Error("Conversation not found");
       }
 
       if (!conversation.participants.includes(user._id)) {
-        debug.error("User not in conversation", { 
+        logger.error("User not in conversation", { 
           userId: user._id,
           conversationId: args.conversationId 
         });
@@ -442,7 +559,7 @@ export const markMessagesAsRead = mutation({
         )
         .collect();
 
-      debug.log("Found unread messages", { count: unreadMessages.length });
+      logger.log("Found unread messages", { count: unreadMessages.length });
 
       // Mark all messages as read
       const updates = await Promise.all(
@@ -475,15 +592,68 @@ export const markMessagesAsRead = mutation({
           }
         });
 
-      debug.log("Messages marked as read", { 
+      logger.log("Messages marked as read", { 
         updated: updates.length,
         conversationId: args.conversationId 
       });
 
       return updates;
     } catch (error) {
-      debug.error("Error marking messages as read", error);
+      logger.error("Error marking messages as read", error);
       throw error;
     }
   },
+});
+
+// Get message details
+export const getMessage = query({
+  args: {
+    messageId: v.id("messages")
+  },
+  handler: async (ctx, args) => {
+    const message = await ctx.db.get(args.messageId);
+    if (!message) throw new Error("Message not found");
+    return message;
+  }
+});
+
+// Update payment request status
+export const updatePaymentRequestStatus = mutation({
+  args: {
+    messageId: v.id("messages"),
+    newStatus: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("declined"),
+      v.literal("cancelled")
+    )
+  },
+  handler: async (ctx, args) => {
+    const message = await ctx.db.get(args.messageId);
+    if (!message) throw new Error("Message not found");
+    if (message.type !== "payment_request") throw new Error("Not a payment request message");
+
+    logger.log("Updating payment request status", {
+      messageId: args.messageId,
+      oldStatus: message.metadata?.requestStatus,
+      newStatus: args.newStatus
+    });
+
+    const { reactions, ...existingMetadata } = message.metadata || {};
+    const updatedMetadata: MessageMetadata = {
+      ...existingMetadata,
+      requestStatus: args.newStatus
+    };
+
+    await ctx.db.patch(args.messageId, {
+      metadata: updatedMetadata
+    });
+
+    logger.log("Payment request status updated", {
+      messageId: args.messageId,
+      newStatus: args.newStatus
+    });
+
+    return message;
+  }
 }); 

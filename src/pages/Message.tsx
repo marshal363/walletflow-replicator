@@ -8,6 +8,9 @@ import { MessageInput } from "@/components/messages/MessageInput";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Send, Zap, QrCode, Split, ArrowLeft } from "lucide-react";
+import { PaymentRequestCard } from "@/components/messages/PaymentRequestCard";
+import { useUser } from "@clerk/clerk-react";
+import { Id } from "@convex/_generated/dataModel";
 
 // Debug logger
 const debug = {
@@ -26,14 +29,14 @@ const debug = {
 };
 
 interface Message {
-  _id: string;
-  type: "text" | "payment_request" | "payment_sent" | "payment_received" | "system";
+  _id: Id<"messages">;
+  type: "text" | "payment_request" | "payment" | "payment_sent" | "payment_received" | "system";
   content: string;
   senderId: string;
   timestamp: string;
   status: "sent" | "delivered" | "read";
   metadata?: {
-    fiatAmount?: string;
+    fiatAmount?: number;
     amount?: number;
     recipientId?: string;
     senderId?: string;
@@ -44,6 +47,8 @@ interface Message {
       userId: string;
       type: string;
     }>;
+    requestStatus?: "pending" | "approved" | "declined" | "cancelled";
+    expiresAt?: string;
   };
 }
 
@@ -270,8 +275,8 @@ const Message = () => {
     debug.log('Rendering message', {
       messageId: msg._id,
       type: msg.type,
-      content: msg.content,
-      metadata: msg.metadata
+      senderId: msg.senderId,
+      timestamp: msg.timestamp
     });
 
     if (msg.type === 'payment_sent') {
@@ -308,20 +313,17 @@ const Message = () => {
 
     if (msg.type === 'payment_request') {
       return (
-        <div className="bg-zinc-900/80 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Zap className="h-4 w-4 text-blue-500" />
-            <span className="text-sm font-medium text-zinc-200">Payment Request</span>
-          </div>
-          <div className="text-xl font-bold mb-1 text-white">
-            {msg.content} BTC
-          </div>
-          <div className="text-xs text-zinc-400 mb-3">
-            ≈ ${msg.metadata?.fiatAmount}
-          </div>
-          <button className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-700 transition-colors">
-            Pay Now
-          </button>
+        <div className="w-[280px]">
+          <PaymentRequestCard
+            messageId={msg._id}
+            onAction={(action) => {
+              debug.log('Payment request action handled', {
+                action,
+                messageId: msg._id,
+                timestamp: new Date().toISOString()
+              });
+            }}
+          />
         </div>
       );
     }
@@ -403,14 +405,14 @@ const Message = () => {
                   <div 
                     className={cn(
                       "flex",
-                      msg.senderId === otherParticipant._id ? "justify-start" : "justify-end"
+                      msg.senderId === otherParticipant._id ? "justify-start" : "justify-end",
+                      "mb-4"
                     )}
                   >
                     <div className={cn(
-                      "max-w-[280px]",
                       msg.type === "payment_request" ? "w-[280px]" : "max-w-[85%]",
-                      msg.type === "text" && msg.senderId === otherParticipant._id ? "bg-zinc-800" : "bg-blue-600",
-                      msg.type !== "payment_request" && "rounded-2xl px-5 py-3"
+                      msg.type === "text" && msg.senderId === otherParticipant._id ? "bg-zinc-800" : msg.type === "text" ? "bg-blue-600" : "bg-transparent",
+                      msg.type === "text" && "rounded-2xl px-5 py-3"
                     )}>
                       {renderMessage(msg as Message)}
                     </div>
