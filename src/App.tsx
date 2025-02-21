@@ -17,6 +17,7 @@ import AuthProvider from "./components/AuthProvider";
 import AddWallet from "./pages/AddWallet";
 import MultisigSetup from "./pages/MultisigSetup";
 import SyncUserWithConvex from "./components/SyncUSerWithCOnvex";
+import RequestAmount from "./pages/RequestAmount";
 
 const queryClient = new QueryClient();
 
@@ -41,8 +42,8 @@ const App = () => {
               <Route path="/add-wallet" element={<AddWallet />} />
               <Route path="/add-wallet/multisig-setup" element={<MultisigSetup />} />
               <Route path="/send" element={<Send />} />
-              <Route path="/send/:id" element={<Send />} />
-              <Route path="/request/:id" element={<Send />} />
+              <Route path="/send/:id" element={<Amount />} />
+              <Route path="/request/:id" element={<RequestAmount />} />
               <Route path="/split/:id" element={<Send />} />
               <Route path="/amount/:id" element={<Amount />} />
               <Route path="/messages" element={<Messages />} />
