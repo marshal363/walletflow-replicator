@@ -93,6 +93,7 @@ export const getOrCreateConversation = mutation({
           isGroup: false,
           createdBy: user._id,
           name: undefined,
+          linkedUserId: args.otherUserId,
         },
       });
 

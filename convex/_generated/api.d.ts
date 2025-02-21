@@ -21,6 +21,7 @@ import type * as getUserIds from "../getUserIds.js";
 import type * as init from "../init.js";
 import type * as insights from "../insights.js";
 import type * as messages from "../messages.js";
+import type * as migrations from "../migrations.js";
 import type * as notifications from "../notifications.js";
 import type * as paymentRequests from "../paymentRequests.js";
 import type * as testing from "../testing.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   init: typeof init;
   insights: typeof insights;
   messages: typeof messages;
+  migrations: typeof migrations;
   notifications: typeof notifications;
   paymentRequests: typeof paymentRequests;
   testing: typeof testing;

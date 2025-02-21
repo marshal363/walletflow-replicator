@@ -1,78 +1,341 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Header } from "@/components/Header";
 import { NumPad } from "@/components/NumPad";
 import { ActionButton } from "@/components/ActionButton";
 import { Avatar } from "@/components/ui/avatar";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { Id } from "@convex/_generated/dataModel";
 import { useToast } from "@/components/ui/use-toast";
 
+const debug = {
+  log: (message: string, data?: Record<string, unknown>) => {
+    console.log("[Amount View]", `'[Client:Transfer] ${message}'`, {
+      ...data,
+      timestamp: new Date().toISOString(),
+    });
+  },
+  error: (message: string, error?: unknown) => {
+    console.error("[Amount View Error]", `'[Client:Transfer] ${message}'`, {
+      error,
+      timestamp: new Date().toISOString(),
+    });
+  },
+  startGroup: (message: string) => {
+    console.log("[Amount View]", `'[Client:Transfer] [GROUP_START] ${message}'`, {
+      timestamp: new Date().toISOString(),
+    });
+  },
+  endGroup: () => {
+    console.log("[Amount View]", `'[Client:Transfer] [GROUP_END]'`, {
+      timestamp: new Date().toISOString(),
+    });
+  }
+};
+
 const Amount = () => {
   const [amount, setAmount] = useState("0");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { id } = useParams();
+  const location = useLocation();
+  const { id: recipientId } = useParams();
   const { toast } = useToast();
 
+  // Extract conversation ID from state with validation
+  const conversationId = location.state?.conversationId;
+
+  // Track if we've shown the conversation ID warning
+  const [hasShownWarning, setHasShownWarning] = useState(false);
+
+  debug.log('Amount view mounted/updated', {
+    recipientId,
+    currentAmount: amount,
+    isLoading,
+    conversationId,
+    hasLocationState: !!location.state,
+    navigationSource: location.state?.from
+  });
+
   // Fetch user details directly using ID
-  const user = useQuery(api.conversations.searchUsers, id ? { query: "" } : "skip");
-  const selectedUser = user?.find(u => u._id === id);
+  const user = useQuery(api.conversations.searchUsers, recipientId ? { query: "" } : "skip");
+  const selectedUser = user?.find(u => u._id === recipientId);
   
   // Get current user's spending wallet
   const currentUserWallet = useQuery(api.wallets.getCurrentUserSpendingWallet);
+
+  // Verify conversation exists if ID is provided
+  const conversation = useQuery(
+    api.messages.getMessages,
+    conversationId ? { conversationId, limit: 1 } : "skip"
+  );
+
+  // Log initial mount with conversation context
+  useEffect(() => {
+    debug.startGroup("Transfer Setup");
+    debug.log("Transfer view initialized", {
+      recipientId,
+      currentAmount: amount,
+      isLoading,
+      conversationId,
+      hasLocationState: !!location.state,
+      navigationSource: location.state?.from
+    });
+    debug.endGroup();
+  }, []);
+
+  // Enhanced logging for user and wallet data
+  useEffect(() => {
+    if (selectedUser && currentUserWallet) {
+      debug.startGroup("Transfer Prerequisites");
+      debug.log("Source wallet validated", {
+        walletId: currentUserWallet._id,
+        walletBalance: currentUserWallet.balance,
+        hasConversation: !!conversation
+      });
+
+      debug.log("Recipient details validated", {
+        recipientId,
+        recipientName: selectedUser.fullName,
+        recipientUsername: selectedUser.username,
+        conversationId
+      });
+
+      if (conversation) {
+        debug.log("Existing conversation found", {
+          conversationId,
+          messageCount: conversation.messages?.length,
+          lastMessageAt: conversation.messages?.[0]?.timestamp
+        });
+      }
+      debug.endGroup();
+    }
+  }, [selectedUser, currentUserWallet, conversation]);
+
+  // Show warning if conversation ID is missing
+  useEffect(() => {
+    if (!hasShownWarning && !conversationId && selectedUser) {
+      debug.log('No conversation ID provided', {
+        recipientId,
+        recipientName: selectedUser.fullName,
+        navigationSource: location.state?.from
+      });
+      setHasShownWarning(true);
+    }
+  }, [conversationId, hasShownWarning, selectedUser, recipientId, location.state]);
   
   // Transfer mutation
   const transfer = useMutation(api.transfers.transferSats);
 
   const handleNumberPress = (num: string) => {
+    debug.log('Number pressed', {
+      digit: num,
+      currentAmount: amount,
+      timestamp: new Date().toISOString()
+    });
+
     if (amount === "0" && num !== ".") {
       setAmount(num);
     } else if (num === "." && amount.includes(".")) {
-      return; // Prevent multiple decimal points
+      debug.log('Decimal point prevented - already exists', {
+        currentAmount: amount
+      });
+      return;
     } else {
       setAmount(prev => prev + num);
     }
   };
 
   const handleDelete = () => {
+    debug.log('Delete pressed', {
+      currentAmount: amount,
+      newAmount: amount.length > 1 ? amount.slice(0, -1) : "0",
+      timestamp: new Date().toISOString()
+    });
     setAmount(prev => prev.length > 1 ? prev.slice(0, -1) : "0");
   };
 
   const handleTransfer = async () => {
-    if (!currentUserWallet || !id) return;
+    if (!currentUserWallet || !recipientId) {
+      debug.error("Transfer validation failed", {
+        hasWallet: !!currentUserWallet,
+        hasRecipientId: !!recipientId,
+        amount,
+        conversationId
+      });
+      return;
+    }
+
+    debug.startGroup("Transfer Execution");
+    
+    debug.log("Starting transfer process", {
+      sourceWalletId: currentUserWallet._id,
+      destinationUserId: recipientId,
+      amount,
+      providedConversationId: conversationId,
+      hasExistingConversation: !!conversation
+    });
 
     setIsLoading(true);
     try {
-      // Convert amount to number and validate
       const amountInSats = parseFloat(amount);
       if (isNaN(amountInSats) || amountInSats <= 0) {
         throw new Error("Invalid amount");
       }
 
-      // Perform the transfer
+      debug.log("Source details", {
+        sourceWalletId: currentUserWallet._id,
+        sourceBalance: currentUserWallet.balance,
+        transferAmount: amountInSats,
+        hasConversation: !!conversation
+      });
+
+      debug.log("Destination details", {
+        destinationUserId: recipientId,
+        destinationName: selectedUser?.fullName,
+        destinationUsername: selectedUser?.username,
+        hasConversation: !!conversation
+      });
+
+      debug.startGroup("Conversation Flow");
+      debug.log("Starting conversation validation", {
+        providedConversationId: conversationId,
+        hasExistingConversation: !!conversation,
+        participants: {
+          source: currentUserWallet._id,
+          destination: recipientId
+        }
+      });
+
+      if (conversation) {
+        debug.log("Existing conversation details", {
+          conversationId,
+          messageCount: conversation.messages?.length,
+          lastMessageAt: conversation.messages?.[0]?.timestamp,
+          participants: conversation.messages?.[0]?.senderId
+        });
+      }
+
       const result = await transfer({
         sourceWalletId: currentUserWallet._id,
-        destinationUserId: id as Id<"users">,
+        destinationUserId: recipientId,
         amount: amountInSats,
         description: `Transfer to ${selectedUser?.fullName || 'user'}`,
+        conversationId
+      });
+
+      debug.log("Transfer mutation completed", {
+        success: result.success,
+        transferId: result.transferId,
+        resultConversationId: result.conversationId,
+        originalConversationId: result.originalConversationId,
+        isExistingConversation: result.isExistingConversation,
+        sentMessageId: result.sentMessageId,
+        receivedMessageId: result.receivedMessageId
+      });
+
+      debug.startGroup("Conversation Resolution");
+      debug.log("Conversation status", {
+        providedConversationId: conversationId,
+        resultConversationId: result.conversationId,
+        originalConversationId: result.originalConversationId,
+        isNewConversation: !result.isExistingConversation,
+        isExistingConversation: result.isExistingConversation,
+        validationDetails: {
+          hadProvidedId: !!conversationId,
+          matchedOriginal: result.conversationId === conversationId,
+          isValid: result.success
+        }
       });
 
       if (result.success) {
+        const targetConversationId = result.conversationId;
+        
+        debug.log("Conversation details", {
+          targetConversationId,
+          originalConversationId: result.originalConversationId,
+          isNewConversation: !result.isExistingConversation,
+          isExistingConversation: result.isExistingConversation,
+          transferDetails: {
+            transferId: result.transferId,
+            amount: amountInSats,
+            recipientName: selectedUser?.fullName
+          },
+          validationResult: {
+            success: true,
+            matchesProvided: targetConversationId === conversationId
+          }
+        });
+
+        debug.log("Message details", {
+          conversationId: targetConversationId,
+          sentMessageId: result.sentMessageId,
+          receivedMessageId: result.receivedMessageId,
+          transferId: result.transferId,
+          messageFlow: {
+            hasValidConversation: !!targetConversationId,
+            isExistingConversation: result.isExistingConversation,
+            messagesPaired: !!result.sentMessageId && !!result.receivedMessageId
+          }
+        });
+
         toast({
           title: "Transfer Successful",
           description: `${amount} sats sent to ${selectedUser?.fullName}`,
         });
-        // Navigate to conversation view after successful transfer
-        navigate(`/conversation/${result.conversationId}`);
+
+        debug.log("Navigation preparation", {
+          destination: `/conversation/${targetConversationId}`,
+          transferComplete: true,
+          amount: amountInSats,
+          recipientName: selectedUser?.fullName,
+          conversationFlow: {
+            providedId: conversationId,
+            finalId: targetConversationId,
+            isNew: !result.isExistingConversation,
+            messageIds: {
+              sent: result.sentMessageId,
+              received: result.receivedMessageId
+            }
+          },
+          navigationDetails: {
+            hasValidTarget: !!targetConversationId,
+            matchesOriginal: targetConversationId === conversationId,
+            isNewConversation: !result.isExistingConversation
+          }
+        });
+
+        debug.endGroup(); // End Conversation Resolution
+        debug.endGroup(); // End Conversation Flow
+        debug.endGroup(); // End Transfer Execution
+
+        navigate(`/conversation/${targetConversationId}`);
       }
     } catch (error) {
+      debug.error("Transfer execution failed", {
+        phase: "execution",
+        error: error instanceof Error ? error.message : "Unknown error",
+        context: {
+          recipientId,
+          amount,
+          walletId: currentUserWallet._id,
+          conversationId,
+          conversationState: {
+            hadProvidedId: !!conversationId,
+            hadExistingConversation: !!conversation,
+            validationFailed: true
+          }
+        }
+      });
+      
       toast({
         title: "Transfer Failed",
         description: error instanceof Error ? error.message : "An error occurred",
         variant: "destructive",
       });
+
+      debug.endGroup(); // End Conversation Flow
+      debug.endGroup(); // End Transfer Execution
     } finally {
       setIsLoading(false);
     }

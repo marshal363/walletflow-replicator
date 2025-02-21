@@ -194,6 +194,12 @@ export const sendMessage = mutation({
       v.literal("payment_received"),
       v.literal("system")
     ),
+    metadata: v.optional(v.object({
+      amount: v.optional(v.number()),
+      recipientId: v.optional(v.id("users")),
+      senderId: v.optional(v.id("users")),
+      transferId: v.optional(v.id("transferTransactions")),
+    })),
   },
   handler: async (ctx, args) => {
     try {
@@ -231,7 +237,7 @@ export const sendMessage = mutation({
         throw new Error("Not authorized to send messages in this conversation");
       }
 
-      // Create message
+      // Create message with proper metadata based on type
       const message = await ctx.db.insert("messages", {
         conversationId: args.conversationId,
         senderId: user._id,
@@ -243,10 +249,23 @@ export const sendMessage = mutation({
           replyTo: undefined,
           attachments: undefined,
           reactions: undefined,
+          // Include payment metadata if it's a payment-related message
+          ...(args.type === "payment_sent" || args.type === "payment_received" || args.type === "payment_request" 
+            ? {
+                amount: args.metadata?.amount,
+                recipientId: args.metadata?.recipientId,
+                senderId: args.metadata?.senderId,
+                transferId: args.metadata?.transferId,
+              }
+            : {}),
         },
       });
 
-      debug.log("Message created", { messageId: message });
+      debug.log("Message created", { 
+        messageId: message,
+        type: args.type,
+        metadata: args.metadata 
+      });
 
       // Update conversation with last message info
       await ctx.db.patch(args.conversationId, {

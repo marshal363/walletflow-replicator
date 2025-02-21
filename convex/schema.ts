@@ -229,6 +229,11 @@ export default defineSchema({
       recipientId: v.optional(v.id("users")),
       senderId: v.optional(v.id("users")),
       transferId: v.optional(v.id("transferTransactions")),
+      visibility: v.optional(v.union(
+        v.literal("sender_only"),
+        v.literal("recipient_only"),
+        v.literal("both")
+      )),
     }),
   })
   .index("by_conversation", ["conversationId"])

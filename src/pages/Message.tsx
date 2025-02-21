@@ -34,6 +34,10 @@ interface Message {
   status: "sent" | "delivered" | "read";
   metadata?: {
     fiatAmount?: string;
+    amount?: number;
+    recipientId?: string;
+    senderId?: string;
+    transferId?: string;
     replyTo?: string;
     attachments?: string[];
     reactions?: Array<{
@@ -81,13 +85,13 @@ const Message = () => {
       debug.log('Messages loaded', { 
         conversationId,
         messageCount: conversation.messages.length,
-        hasUnread: conversation.messages.some(m => m.status === "delivered"),
         messages: conversation.messages.map(m => ({
           id: m._id,
           type: m.type,
-          status: m.status,
-          timestamp: m.timestamp,
-          senderId: m.senderId
+          content: m.content,
+          metadata: m.metadata,
+          senderId: m.senderId,
+          timestamp: m.timestamp
         }))
       });
     }
@@ -190,7 +194,68 @@ const Message = () => {
     }
   }, [conversationId, message, isSending, sendMessage]);
 
+  // Log when payment actions are toggled
+  const handlePaymentActionsToggle = (show: boolean) => {
+    debug.log('Payment actions visibility toggled', {
+      conversationId,
+      showPaymentActions: show,
+      otherParticipantId: otherParticipant?._id,
+      timestamp: new Date().toISOString()
+    });
+    setShowPaymentActions(show);
+  };
+
+  // Log when send action is clicked
+  const handleSendClick = () => {
+    debug.log('Send payment action clicked', {
+      conversationId,
+      recipientId: otherParticipant?._id,
+      recipientName: otherParticipant?.fullName,
+      timestamp: new Date().toISOString()
+    });
+    navigate(`/send/${conversationId}`);
+  };
+
   const renderMessage = (msg: Message) => {
+    debug.log('Rendering message', {
+      messageId: msg._id,
+      type: msg.type,
+      content: msg.content,
+      metadata: msg.metadata
+    });
+
+    if (msg.type === 'payment_sent') {
+      return (
+        <div className="flex items-center gap-2 bg-blue-500/10 rounded-xl p-3">
+          <Zap className="h-4 w-4 text-blue-500" />
+          <div className="flex flex-col">
+            <span className="text-sm text-zinc-300">{msg.content}</span>
+            {msg.metadata?.amount && (
+              <span className="text-xs text-zinc-400">
+                Amount: {msg.metadata.amount.toLocaleString()} sats
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (msg.type === 'payment_received') {
+      return (
+        <div className="flex items-center gap-2 bg-green-500/10 rounded-xl p-3">
+          <Zap className="h-4 w-4 text-green-500" />
+          <div className="flex flex-col">
+            <span className="text-sm text-zinc-300">{msg.content}</span>
+            {msg.metadata?.amount && (
+              <span className="text-xs text-zinc-400">
+                Amount: {msg.metadata.amount.toLocaleString()} sats
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     if (msg.type === 'payment_request') {
       return (
         <div className="bg-zinc-900/80 rounded-xl p-4">
@@ -207,17 +272,6 @@ const Message = () => {
           <button className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-700 transition-colors">
             Pay Now
           </button>
-        </div>
-      );
-    }
-
-    if (msg.type === 'payment_sent' || msg.type === 'payment_received') {
-      return (
-        <div className="flex items-center gap-2">
-          <span className="text-base">{msg.type === 'payment_sent' ? 'You sent' : 'Received'}</span>
-          <span className="text-sm bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full">
-            {msg.content} BTC
-          </span>
         </div>
       );
     }
@@ -326,7 +380,7 @@ const Message = () => {
           {!showPaymentActions ? (
             <div className="flex items-center space-x-3">
               <button 
-                onClick={() => setShowPaymentActions(true)}
+                onClick={() => handlePaymentActionsToggle(true)}
                 className="h-11 w-11 rounded-full bg-zinc-800/80 flex items-center justify-center hover:bg-zinc-700 transition-colors"
               >
                 <Zap className="h-5 w-5 text-white" />
@@ -344,7 +398,7 @@ const Message = () => {
           ) : (
             <div className="flex space-x-2">
               <button 
-                onClick={() => navigate(`/send/${conversationId}`)} 
+                onClick={handleSendClick}
                 className="flex-1 bg-[#0066FF] text-white rounded-full py-2.5 px-4 font-medium hover:bg-[#0052CC] transition-colors flex items-center justify-center gap-2"
               >
                 <Send className="h-5 w-5" />
@@ -365,7 +419,7 @@ const Message = () => {
                 <span>Split</span>
               </button>
               <button 
-                onClick={() => setShowPaymentActions(false)}
+                onClick={() => handlePaymentActionsToggle(false)}
                 className="h-11 w-11 rounded-full bg-zinc-800/80 flex items-center justify-center hover:bg-zinc-700 transition-colors"
               >
                 <ArrowLeft className="h-5 w-5 text-white" />

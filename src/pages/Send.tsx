@@ -2,11 +2,11 @@ import { Header } from "@/components/Header";
 import { Avatar } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Search, List, QrCode, Keyboard } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { useDebounce } from "@/hooks/useDebounce";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 // Debug logger
@@ -35,13 +35,44 @@ interface User {
 
 const Send = () => {
   const navigate = useNavigate();
+  const { id: conversationId } = useParams();
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
 
-  debug.log('Component mounted/updated', {
+  debug.log('Send view mounted/updated', {
+    conversationId,
     searchQuery,
     debouncedSearch,
+    timestamp: new Date().toISOString()
   });
+
+  // Get conversation details if conversationId exists
+  const conversationDetails = useQuery(
+    api.messages.getMessages,
+    conversationId ? { conversationId } : "skip"
+  );
+
+  // Get other participant details
+  const otherParticipant = useQuery(
+    api.users.getOtherParticipant,
+    conversationId ? { conversationId } : "skip"
+  );
+
+  // Effect to handle pre-selected recipient from conversation
+  useEffect(() => {
+    if (conversationId && otherParticipant) {
+      debug.log('Recipient found from conversation, navigating to amount', {
+        conversationId,
+        recipientId: otherParticipant._id,
+        recipientName: otherParticipant.fullName,
+        timestamp: new Date().toISOString()
+      });
+      
+      navigate(`/amount/${otherParticipant._id}`, {
+        state: { conversationId }
+      });
+    }
+  }, [conversationId, otherParticipant, navigate]);
 
   // Search users when query exists
   const searchResults = useQuery(
@@ -49,22 +80,46 @@ const Send = () => {
     debouncedSearch ? { query: debouncedSearch } : "skip"
   );
 
+  // Log when search results are updated
+  useEffect(() => {
+    if (searchResults) {
+      debug.log('Search results updated', {
+        query: debouncedSearch,
+        resultCount: searchResults.length,
+        results: searchResults.map(user => ({
+          id: user._id,
+          username: user.username
+        })),
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, [searchResults, debouncedSearch]);
+
   // Handle search input
   const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     debug.log('Search input changed', { 
       previousValue: searchQuery,
       newValue: value,
-      length: value.length
+      length: value.length,
+      timestamp: new Date().toISOString()
     });
     setSearchQuery(value);
   }, [searchQuery]);
 
   // Handle user selection
   const handleUserSelect = useCallback((userId: string) => {
-    debug.log('User selected', { userId });
-    navigate(`/amount/${userId}`);
-  }, [navigate]);
+    debug.log('User selected for payment', {
+      userId,
+      searchQuery,
+      fromConversation: !!conversationId,
+      conversationId,
+      timestamp: new Date().toISOString()
+    });
+    navigate(`/amount/${userId}`, {
+      state: { conversationId }
+    });
+  }, [navigate, searchQuery, conversationId]);
 
   return (
     <div className="min-h-screen flex flex-col bg-black text-white">
