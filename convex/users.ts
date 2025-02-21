@@ -409,4 +409,19 @@ export const getOtherParticipant = query({
       throw error;
     }
   },
+});
+
+// Get current authenticated user
+export const getCurrentUser = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    return await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id")
+      .filter((q) => q.eq(q.field("clerkId"), identity.subject))
+      .unique();
+  },
 }); 
