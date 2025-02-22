@@ -1,4 +1,4 @@
-import { MoreVertical, Plus, Wallet, Shield, Zap, Clock, Info, Bitcoin, ChevronRight, ChevronDown } from "lucide-react";
+import { MoreVertical, Plus, Wallet, Shield, Zap, Clock, Info, Bitcoin, ChevronRight, ChevronDown, Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,10 @@ import { motion } from "framer-motion";
 interface Balance {
   sats: string;
   btc: string;
+  fiat?: {
+    amount: string;
+    currency: string;
+  };
 }
 
 interface WalletCardProps {
@@ -73,6 +77,24 @@ const walletTypes = [
   }
 ];
 
+const walletIcons = {
+  bitcoin: Bitcoin,
+  spending: Zap,
+  lightning: Zap,
+  savings: Bitcoin,
+  multisig: Shield,
+  add: Plus
+} as const;
+
+const iconColors = {
+  bitcoin: "text-blue-500",
+  spending: "text-purple-500",
+  lightning: "text-purple-500",
+  savings: "text-orange-500",
+  multisig: "text-blue-500",
+  add: "text-zinc-500"
+} as const;
+
 export function WalletCard({
   type = 'add',
   name,
@@ -83,12 +105,21 @@ export function WalletCard({
   view = 'compact'
 }: WalletCardProps) {
   const [showBTC, setShowBTC] = useState(false);
+  const [isBalanceVisible, setIsBalanceVisible] = useState(true);
   const isAddCard = type === 'add';
   
   const toggleBalance = (e: React.MouseEvent) => {
     e.stopPropagation();
     setShowBTC(!showBTC);
   };
+
+  const toggleBalanceVisibility = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsBalanceVisible(!isBalanceVisible);
+  };
+
+  const WalletIcon = walletIcons[type];
+  const iconColor = iconColors[type];
   
   if (type === 'add') {
     return (
@@ -143,14 +174,7 @@ export function WalletCard({
       onClick={onClick}
     >
       {/* Top Actions */}
-      <div className="absolute top-3 right-3 flex gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 rounded-xl text-white/90 hover:text-white hover:bg-white/10"
-        >
-          <Plus className="h-5 w-5" />
-        </Button>
+      <div className="absolute top-3 right-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -189,34 +213,63 @@ export function WalletCard({
       {/* Card Content */}
       <div className="h-full flex flex-col pt-2">
         <div className="flex justify-between items-start mb-4">
-          <div>
-            <p className="text-sm font-medium text-white/80 mb-1">{type}</p>
-            <h3 className="text-xl font-semibold text-white">{name}</h3>
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "w-11 h-11 rounded-xl bg-black/20",
+              "flex items-center justify-center"
+            )}>
+              <WalletIcon className="h-[22px] w-[22px] text-white" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-white/80">{type}</p>
+              <h3 className="text-xl font-semibold text-white">{name}</h3>
+            </div>
           </div>
         </div>
         
-        <div className="mt-auto">
+        <div className="mt-auto relative">
           {balance && (
-            <button 
-              onClick={toggleBalance}
-              className="group flex items-center gap-2 hover:opacity-90 active:opacity-80 transition-opacity"
-            >
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-[28px] font-bold text-white tracking-tight">
-                  {showBTC ? `₿${balance.btc}` : balance.sats}
-                </span>
-                <span className="text-sm font-medium text-white/90">
-                  {showBTC ? 'BTC' : 'sats'}
-                </span>
+            <div className="space-y-1">
+              <div className={cn(
+                "transition-all",
+                !isBalanceVisible && "blur-sm select-none"
+              )}>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[28px] font-bold text-white tracking-tight">
+                    {showBTC ? `₿${balance.btc}` : balance.sats}
+                  </span>
+                  <span className="text-sm font-medium text-white/90">
+                    {showBTC ? 'BTC' : 'sats'}
+                  </span>
+                </div>
+                {balance.fiat && (
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <span className="text-sm text-zinc-400">≈</span>
+                    <span className="text-sm text-zinc-400">
+                      ${balance.fiat.amount} {balance.fiat.currency}
+                    </span>
+                  </div>
+                )}
               </div>
-              <Bitcoin className="h-4 w-4 text-white/80 transition-transform group-hover:scale-110" />
-            </button>
+            </div>
           )}
           {lastTransaction && (
             <p className="text-sm font-medium text-white/80 mt-2">
               Last active: {lastTransaction}
             </p>
           )}
+          
+          {/* Balance visibility toggle */}
+          <button
+            onClick={toggleBalanceVisibility}
+            className="absolute bottom-0 right-0 w-11 h-11 rounded-xl bg-black/20 flex items-center justify-center hover:bg-black/30 transition-colors"
+          >
+            {isBalanceVisible ? (
+              <Eye className="h-[22px] w-[22px] text-white" />
+            ) : (
+              <EyeOff className="h-[22px] w-[22px] text-white" />
+            )}
+          </button>
         </div>
       </div>
     </div>

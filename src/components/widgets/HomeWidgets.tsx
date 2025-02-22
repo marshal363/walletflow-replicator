@@ -330,11 +330,27 @@ const formatLastTransaction = (date: string): string => {
   return txDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 
-const formatBalance = (balance: number, currency: string): { sats: string, btc: string } => {
-  if (balance === 0) return { sats: '0', btc: '0.00000000' };
+const formatBalance = (balance: number, currency: string): { sats: string, btc: string, fiat: { amount: string, currency: string } } => {
+  if (balance === 0) return { 
+    sats: '0', 
+    btc: '0.00000000',
+    fiat: {
+      amount: '0.00',
+      currency: 'USD'
+    }
+  };
+
+  // Assuming 1 BTC = $32,000 USD (you should get this from your actual exchange rate)
+  const btcValue = balance / 100000000;
+  const fiatValue = (btcValue * 32000).toFixed(2);
+  
   return {
-    sats: balance.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " "),
-    btc: (balance / 100000000).toFixed(8)
+    sats: balance.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","),
+    btc: btcValue.toFixed(8),
+    fiat: {
+      amount: fiatValue,
+      currency: 'USD'
+    }
   };
 };
 
