@@ -203,7 +203,7 @@ export const createChatPaymentRequest = mutation({
   handler: async (ctx, args) => {
     debug.startGroup("Create Chat Payment Request");
     const now = new Date().toISOString();
-    const defaultExpirationMs = 10 * 60 * 1000; // 10 minutes in milliseconds
+    const defaultExpirationMs = 60 * 1000; // 1 minute in milliseconds
     const expiresAt = args.expiresAt || new Date(Date.now() + defaultExpirationMs).toISOString();
 
     debug.log("Request initialization", {
@@ -732,7 +732,7 @@ export const editPaymentRequest = mutation({
     }
 
     const now = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes from now
+    const expiresAt = new Date(Date.now() + 60 * 1000).toISOString(); // 1 minute from now
 
     // Update the request
     await ctx.db.patch(args.requestId, {
