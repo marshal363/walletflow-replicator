@@ -32,28 +32,28 @@ export function ActionBar({
       {/* Expandable Actions Panel */}
       <div
         className={cn(
-          "absolute bottom-full left-0 right-0 bg-[#1d1d1d] rounded-t-xl transition-all duration-200 ease-in-out border-t border-zinc-800/50",
+          "absolute bottom-full left-0 right-0 bg-black/40 backdrop-blur-md rounded-t-xl transition-all duration-200 ease-in-out border-t border-zinc-800/50",
           showActions ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0 pointer-events-none"
         )}
       >
         <div className="p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <Button
-              className="flex-1 bg-[#0066FF] hover:bg-[#0052CC] text-white h-10 rounded-lg"
+              className="flex-1 bg-[#0066FF] hover:bg-[#0052CC] text-white h-10 rounded-lg transition-all duration-200"
               onClick={onSendClick}
             >
               <Send className="h-4 w-4 mr-2" />
               Send
             </Button>
             <Button
-              className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white h-10 rounded-lg"
+              className="flex-1 bg-zinc-800/80 hover:bg-zinc-700 text-white h-10 rounded-lg transition-all duration-200"
               onClick={onRequestClick}
             >
               <QrCode className="h-4 w-4 mr-2" />
               Request
             </Button>
             <Button
-              className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white h-10 rounded-lg"
+              className="flex-1 bg-zinc-800/80 hover:bg-zinc-700 text-white h-10 rounded-lg transition-all duration-200"
               onClick={onSplitClick}
             >
               <Split className="h-4 w-4 mr-2" />
@@ -87,7 +87,7 @@ export function ActionBar({
             <MessageInput
               value={messageValue}
               onChange={onMessageChange}
-              onSubmit={onSend}
+              onSubmit={() => onSend(messageValue)}
               placeholder={`Message ${recipientUsername}`}
               disabled={isSending}
             />

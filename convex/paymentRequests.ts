@@ -202,18 +202,21 @@ export const createChatPaymentRequest = mutation({
   },
   handler: async (ctx, args) => {
     debug.startGroup("Create Chat Payment Request");
-    debug.log("Starting request creation", {
+    const now = new Date().toISOString();
+    const defaultExpirationMs = 10 * 60 * 1000; // 10 minutes in milliseconds
+    const expiresAt = args.expiresAt || new Date(Date.now() + defaultExpirationMs).toISOString();
+
+    debug.log("Request initialization", {
       requesterId: args.requesterId,
       recipientId: args.recipientId,
       amount: args.amount,
       type: args.type,
-      conversationId: args.conversationId
+      createdAt: now,
+      expiresAt,
+      timeUntilExpiration: `${defaultExpirationMs / 1000} seconds`
     });
 
     try {
-      const now = new Date().toISOString();
-      const expiresAt = args.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-      
       // Validate users exist
       const requester = await ctx.db.get(args.requesterId);
       const recipient = await ctx.db.get(args.recipientId);
@@ -307,7 +310,25 @@ export const createChatPaymentRequest = mutation({
         updatedAt: now
       });
 
-      debug.log("Payment request created", { requestId: request });
+      // Update the message with the request ID
+      await ctx.db.patch(message, {
+        metadata: {
+          amount: args.amount,
+          recipientId: args.recipientId,
+          senderId: args.requesterId,
+          visibility: "both",
+          requestStatus: "pending",
+          attachments: args.attachments,
+          requestId: request
+        }
+      });
+
+      debug.log("Payment request created", { 
+        requestId: request,
+        messageId: message,
+        expiresAt,
+        timeUntilExpiration: Math.floor((new Date(expiresAt).getTime() - new Date(now).getTime()) / 1000)
+      });
 
       // Create a notification for the recipient
       await ctx.db.insert("notifications", {
@@ -325,16 +346,10 @@ export const createChatPaymentRequest = mutation({
             amount: args.amount,
             currency: "BTC",
             type: args.type,
-            status: "pending"
+            status: "pending" as const
           }
         },
         createdAt: now,
-      });
-
-      debug.log("Request creation completed", {
-        requestId: request,
-        messageId: message,
-        expiresAt
       });
 
       debug.endGroup();
@@ -357,9 +372,9 @@ export const handleRequestAction = mutation({
     requestId: v.id("paymentRequests"),
     messageId: v.id("messages"),
     action: v.union(
-      v.literal("approve"),
-      v.literal("decline"),
-      v.literal("cancel"),
+      v.literal("approved"),
+      v.literal("declined"),
+      v.literal("cancelled"),
       v.literal("remind")
     ),
     note: v.optional(v.string())
@@ -368,17 +383,45 @@ export const handleRequestAction = mutation({
     debug.startGroup("Handle Request Action");
     
     try {
+      debug.log("Action request received", {
+        requestId: args.requestId,
+        messageId: args.messageId,
+        action: args.action,
+        timestamp: new Date().toISOString()
+      });
+
       const request = await ctx.db.get(args.requestId);
-      if (!request) throw new Error("Payment request not found");
+      if (!request) {
+        debug.error("Request not found", { requestId: args.requestId });
+        throw new Error("Payment request not found");
+      }
+
+      debug.log("Request details", {
+        request: {
+          id: request._id,
+          status: request.status,
+          requesterId: request.requesterId,
+          recipientId: request.recipientId,
+          amount: request.amount,
+          type: request.type,
+          expiresAt: request.metadata.expiresAt
+        }
+      });
 
       const message = await ctx.db.get(args.messageId);
-      if (!message) throw new Error("Message not found");
+      if (!message) {
+        debug.error("Message not found", { messageId: args.messageId });
+        throw new Error("Message not found");
+      }
 
       const now = new Date().toISOString();
       
       // Validate action permissions
       const identity = await ctx.auth.getUserIdentity();
-      if (!identity) throw new Error("Not authenticated");
+      if (!identity) {
+        debug.error("Authentication failed", { identity });
+        throw new Error("Not authenticated");
+      }
       
       const user = await ctx.db
         .query("users")
@@ -386,27 +429,67 @@ export const handleRequestAction = mutation({
         .filter((q) => q.eq(q.field("clerkId"), identity.subject))
         .unique();
       
-      if (!user) throw new Error("User not found");
+      if (!user) {
+        debug.error("User not found", { clerkId: identity.subject });
+        throw new Error("User not found");
+      }
+
+      debug.log("Permission check", {
+        userId: user._id,
+        requesterId: request.requesterId,
+        recipientId: request.recipientId,
+        action: args.action,
+        isRequester: request.requesterId === user._id,
+        isRecipient: request.recipientId === user._id
+      });
 
       // Check permissions
-      if (args.action === "cancel" && request.requesterId !== user._id) {
+      if (args.action === "cancelled" && request.requesterId !== user._id) {
+        debug.error("Permission denied - cancel", {
+          userId: user._id,
+          requesterId: request.requesterId
+        });
         throw new Error("Only requester can cancel");
       }
-      if ((args.action === "approve" || args.action === "decline") && 
+      if ((args.action === "approved" || args.action === "declined") && 
           request.recipientId !== user._id) {
+        debug.error("Permission denied - approve/decline", {
+          userId: user._id,
+          recipientId: request.recipientId,
+          action: args.action
+        });
         throw new Error("Only recipient can approve/decline");
+      }
+
+      // Check expiration
+      const expirationDate = new Date(request.metadata.expiresAt);
+      const isExpired = expirationDate < new Date();
+      
+      debug.log("Expiration check", {
+        expiresAt: request.metadata.expiresAt,
+        currentTime: now,
+        isExpired,
+        timeUntilExpiration: Math.floor((expirationDate.getTime() - new Date().getTime()) / 1000)
+      });
+
+      if (isExpired && args.action === "approved") {
+        debug.error("Request expired", {
+          expiresAt: request.metadata.expiresAt,
+          currentTime: now
+        });
+        throw new Error("Cannot approve expired request");
       }
 
       // Handle action
       switch (args.action) {
-        case "approve":
+        case "approved":
           await ctx.db.patch(args.requestId, {
             status: "approved",
             updatedAt: now
           });
           break;
         
-        case "decline":
+        case "declined":
           await ctx.db.patch(args.requestId, {
             status: "declined",
             updatedAt: now,
@@ -417,7 +500,7 @@ export const handleRequestAction = mutation({
           });
           break;
         
-        case "cancel":
+        case "cancelled":
           await ctx.db.patch(args.requestId, {
             status: "cancelled",
             updatedAt: now,
@@ -445,7 +528,7 @@ export const handleRequestAction = mutation({
                 amount: request.amount,
                 currency: request.currency,
                 type: request.type,
-                status: request.status
+                status: "pending" as const
               }
             },
             createdAt: now
@@ -463,6 +546,19 @@ export const handleRequestAction = mutation({
 
       // Create notification for requester (except for remind action)
       if (args.action !== "remind") {
+        // Map payment request status to transaction status
+        const getTransactionStatus = (action: typeof args.action) => {
+          switch (action) {
+            case "approved":
+              return "completed" as const;
+            case "declined":
+            case "cancelled":
+              return "failed" as const;
+            default:
+              return "pending" as const;
+          }
+        };
+
         await ctx.db.insert("notifications", {
           userId: request.requesterId,
           type: "payment_request",
@@ -478,7 +574,7 @@ export const handleRequestAction = mutation({
               amount: request.amount,
               currency: request.currency,
               type: request.type,
-              status: args.action
+              status: getTransactionStatus(args.action)
             }
           },
           createdAt: now
@@ -542,21 +638,150 @@ export const getRequestDetails = query({
     requestId: v.id("paymentRequests")
   },
   handler: async (ctx, args) => {
+    debug.startGroup("Get Request Details");
+    debug.log("Query started", {
+      requestId: args.requestId,
+      timestamp: new Date().toISOString()
+    });
+
+    try {
+      const request = await ctx.db.get(args.requestId);
+      
+      if (!request) {
+        debug.error("Request not found", {
+          requestId: args.requestId,
+          timestamp: new Date().toISOString()
+        });
+        return { request: null, message: null, requester: null, recipient: null, isExpired: false };
+      }
+
+      debug.log("Request found", {
+        requestId: args.requestId,
+        request: {
+          _id: request._id,
+          status: request.status,
+          amount: request.amount,
+          type: request.type,
+          expiresAt: request.metadata.expiresAt
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      const message = await ctx.db.get(request.messageId);
+      if (!message) {
+        debug.error("Message not found", {
+          requestId: args.requestId,
+          messageId: request.messageId,
+          timestamp: new Date().toISOString()
+        });
+        return { request, message: null, requester: null, recipient: null, isExpired: false };
+      }
+
+      const [requester, recipient] = await Promise.all([
+        ctx.db.get(request.requesterId),
+        ctx.db.get(request.recipientId)
+      ]);
+
+      const now = new Date();
+      const expirationDate = new Date(request.metadata.expiresAt);
+      const isExpired = expirationDate < now;
+      const timeUntilExpiration = Math.floor((expirationDate.getTime() - now.getTime()) / 1000);
+
+      debug.log("Request details complete", {
+        requestId: args.requestId,
+        messageId: request.messageId,
+        expiresAt: request.metadata.expiresAt,
+        currentTime: now.toISOString(),
+        isExpired,
+        timeUntilExpiration,
+        hasRequester: !!requester,
+        hasRecipient: !!recipient,
+        timezoneOffset: now.getTimezoneOffset(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      });
+
+      debug.endGroup();
+      return {
+        request,
+        message,
+        requester,
+        recipient,
+        isExpired
+      };
+    } catch (error) {
+      debug.error("Error fetching request details", {
+        requestId: args.requestId,
+        error: error instanceof Error ? error.message : "Unknown error",
+        timestamp: new Date().toISOString()
+      });
+      debug.endGroup();
+      throw error;
+    }
+  }
+});
+
+export const editPaymentRequest = mutation({
+  args: {
+    requestId: v.id("paymentRequests"),
+    amount: v.number(),
+  },
+  handler: async (ctx, args) => {
     const request = await ctx.db.get(args.requestId);
-    if (!request) throw new Error("Payment request not found");
+    if (!request) {
+      throw new Error("Payment request not found");
+    }
 
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes from now
+
+    // Update the request
+    await ctx.db.patch(args.requestId, {
+      amount: args.amount,
+      updatedAt: now,
+      metadata: {
+        ...request.metadata,
+        expiresAt
+      }
+    });
+
+    // Update the associated message
     const message = await ctx.db.get(request.messageId);
-    if (!message) throw new Error("Message not found");
+    if (message) {
+      await ctx.db.patch(request.messageId, {
+        metadata: {
+          ...message.metadata,
+          amount: args.amount
+        }
+      });
+    }
 
-    const requester = await ctx.db.get(request.requesterId);
-    const recipient = await ctx.db.get(request.recipientId);
+    // Create notification for recipient
+    await ctx.db.insert("notifications", {
+      userId: request.recipientId,
+      type: "payment_request",
+      title: "Payment Request Updated",
+      content: `The payment request amount has been updated to ${args.amount} sats`,
+      status: "unread",
+      metadata: {
+        relatedId: args.requestId.toString(),
+        relatedType: "payment_request",
+        priority: "high",
+        actionUrl: `/requests/${args.requestId}`,
+        paymentData: {
+          amount: args.amount,
+          currency: request.currency,
+          type: request.type,
+          status: "pending" as const
+        }
+      },
+      createdAt: now,
+    });
 
     return {
-      request,
-      message,
-      requester,
-      recipient,
-      isExpired: new Date(request.metadata.expiresAt) < new Date()
+      success: true,
+      requestId: args.requestId,
+      newAmount: args.amount,
+      expiresAt
     };
-  }
+  },
 }); 

@@ -1,13 +1,28 @@
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@convex/_generated/api";
-import { Id } from "@convex/_generated/dataModel";
+import { api } from "../../../convex/_generated/api";
+import { Id } from "../../../convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
 import { ArrowUpRight, Loader2, Clock, Check, X, ArrowDownLeft } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { useUser } from "@clerk/clerk-react";
+
+const debug = {
+  log: (message: string, data?: Record<string, unknown>) => {
+    console.log("[PaymentRequestCard] [LOG]", message, {
+      ...data,
+      timestamp: new Date().toISOString()
+    });
+  },
+  error: (message: string, error?: unknown) => {
+    console.error("[PaymentRequestCard] [ERROR]", message, {
+      error,
+      timestamp: new Date().toISOString()
+    });
+  }
+};
 
 interface PaymentRequestCardProps {
   messageId: Id<"messages">;
@@ -30,21 +45,111 @@ export function PaymentRequestCard({
   // Get current user's spending wallet
   const currentUserWallet = useQuery(api.wallets.getCurrentUserSpendingWallet);
 
+  // Get current user's Convex ID
+  const currentUser = useQuery(api.users.getCurrentUser);
+
   // Mutations
-  const updateStatus = useMutation(api.messages.updatePaymentRequestStatus);
+  const handleRequestAction = useMutation(api.paymentRequests.handleRequestAction);
   const transfer = useMutation(api.transfers.transferSats);
 
-  if (!message || !user) return null;
+  // Get request details with error handling
+  const requestId = message?.metadata?.requestId;
+  const requestDetails = useQuery(
+    api.paymentRequests.getRequestDetails, 
+    requestId ? { requestId } : "skip",
+    {
+      onError: (error) => {
+        debug.error("Failed to fetch request details", {
+          error,
+          requestId,
+          messageId,
+          message: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
+    }
+  );
 
-  const isRequester = message.metadata.senderId === user.id;
-  const isRecipient = message.metadata.recipientId === user.id;
+  useEffect(() => {
+    if (message && currentUser) {
+      debug.log("Message and user loaded", {
+        messageId: message._id,
+        senderId: message.metadata.senderId,
+        recipientId: message.metadata.recipientId,
+        currentUserId: currentUser._id,
+        clerkId: user?.id,
+        status: message.metadata.requestStatus,
+        amount: message.metadata.amount,
+        requestId: message.metadata.requestId,
+        hasRequestDetails: !!requestDetails?.request,
+        expiresAt: requestDetails?.request?.metadata?.expiresAt
+      });
+    }
+  }, [message, currentUser, user?.id, requestDetails]);
+
+  // Early return if no message or user data
+  if (!message || !user || !currentUser) {
+    debug.log("Missing required data", {
+      hasMessage: !!message,
+      hasUser: !!user,
+      hasCurrentUser: !!currentUser
+    });
+    return null;
+  }
+
+  // Get expiration from request details
+  const expiresAt = requestDetails?.request?.metadata?.expiresAt;
+  const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
+  const timeUntilExpiration = expiresAt ? 
+    Math.floor((new Date(expiresAt).getTime() - new Date().getTime()) / 1000) : 0;
+
+  // Check if the request exists
+  if (requestId && (!requestDetails?.request || requestDetails instanceof Error)) {
+    debug.error("Request not found or error", { 
+      requestId,
+      messageId: message._id,
+      currentUserId: currentUser._id,
+      error: requestDetails instanceof Error ? requestDetails : undefined
+    });
+    return (
+      <div className="rounded-xl p-4 space-y-3 bg-[#2b1d1d] border border-[#472d2d]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-red-400">
+            <X className="h-4 w-4" />
+            <span className="text-sm font-medium">Invalid Request</span>
+          </div>
+        </div>
+        <div className="text-sm text-gray-500">
+          This payment request no longer exists or has been deleted.
+        </div>
+      </div>
+    );
+  }
+
+  // Compare against Convex user ID instead of Clerk ID
+  const isRequester = message.metadata.senderId === currentUser._id;
+  const isRecipient = message.metadata.recipientId === currentUser._id;
   const status = message.metadata.requestStatus;
   const amount = message.metadata.amount;
   const usdAmount = (amount * 0.00043).toFixed(2);
-  const isExpired = message.metadata.expiresAt && new Date(message.metadata.expiresAt) < new Date();
+  
+  debug.log("Request state", {
+    isRequester,
+    isRecipient,
+    currentUserId: currentUser._id,
+    senderId: message.metadata.senderId,
+    recipientId: message.metadata.recipientId,
+    status,
+    amount,
+    isExpired,
+    timeUntilExpiration,
+    hasWallet: !!currentUserWallet,
+    requestId,
+    hasRequestDetails: !!requestDetails?.request
+  });
 
   const handleApprove = async () => {
     if (!currentUserWallet) {
+      debug.error("No wallet found for approval");
       toast({
         title: "Error",
         description: "No wallet found",
@@ -53,12 +158,45 @@ export function PaymentRequestCard({
       return;
     }
 
+    if (!isRecipient) {
+      debug.error("Permission denied - only recipient can approve", {
+        userId: user.id,
+        recipientId: message.metadata.recipientId
+      });
+      toast({
+        title: "Error",
+        description: "You don't have permission to approve this request",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isExpired) {
+      debug.error("Cannot approve expired request", {
+        expiresAt,
+        currentTime: new Date().toISOString()
+      });
+      toast({
+        title: "Error",
+        description: "This request has expired",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
-      // First update the request status
-      await updateStatus({
+      debug.log("Approving request", {
         messageId,
-        newStatus: "approved"
+        requestId: message.metadata.requestId,
+        amount
+      });
+
+      // First update the request status
+      await handleRequestAction({
+        messageId,
+        requestId: message.metadata.requestId,
+        action: "approved"
       });
 
       // Then initiate the transfer
@@ -72,6 +210,12 @@ export function PaymentRequestCard({
       });
 
       if (result.success) {
+        debug.log("Payment successful", {
+          messageId,
+          amount,
+          transferResult: result
+        });
+
         toast({
           title: "Payment Sent",
           description: `${amount} sats sent successfully`,
@@ -79,7 +223,7 @@ export function PaymentRequestCard({
         onAction?.("approve");
       }
     } catch (error) {
-      console.error("Payment failed:", error);
+      debug.error("Payment failed", error);
       toast({
         title: "Payment Failed",
         description: error instanceof Error ? error.message : "An error occurred",
@@ -87,21 +231,46 @@ export function PaymentRequestCard({
       });
 
       // Revert request status
-      await updateStatus({
-        messageId,
-        newStatus: "declined"
-      });
+      try {
+        await handleRequestAction({
+          messageId,
+          requestId: message.metadata.requestId,
+          action: "declined",
+          note: "Payment failed"
+        });
+      } catch (revertError) {
+        debug.error("Failed to revert status", revertError);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleDecline = async () => {
+    if (!isRecipient) {
+      debug.error("Permission denied - only recipient can decline", {
+        userId: user.id,
+        recipientId: message.metadata.recipientId
+      });
+      toast({
+        title: "Error",
+        description: "You don't have permission to decline this request",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
-      await updateStatus({
+      debug.log("Declining request", {
         messageId,
-        newStatus: "declined"
+        requestId: message.metadata.requestId
+      });
+
+      await handleRequestAction({
+        messageId,
+        requestId: message.metadata.requestId,
+        action: "declined"
       });
       
       toast({
@@ -110,7 +279,7 @@ export function PaymentRequestCard({
       });
       onAction?.("decline");
     } catch (error) {
-      console.error("Failed to decline:", error);
+      debug.error("Failed to decline", error);
       toast({
         title: "Error",
         description: "Failed to decline the request",
@@ -122,11 +291,30 @@ export function PaymentRequestCard({
   };
 
   const handleCancel = async () => {
+    if (!isRequester) {
+      debug.error("Permission denied - only requester can cancel", {
+        userId: user.id,
+        requesterId: message.metadata.senderId
+      });
+      toast({
+        title: "Error",
+        description: "You don't have permission to cancel this request",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
-      await updateStatus({
+      debug.log("Cancelling request", {
         messageId,
-        newStatus: "cancelled"
+        requestId: message.metadata.requestId
+      });
+
+      await handleRequestAction({
+        messageId,
+        requestId: message.metadata.requestId,
+        action: "cancelled"
       });
       
       toast({
@@ -135,7 +323,7 @@ export function PaymentRequestCard({
       });
       onAction?.("cancel");
     } catch (error) {
-      console.error("Failed to cancel:", error);
+      debug.error("Failed to cancel", error);
       toast({
         title: "Error",
         description: "Failed to cancel the request",
@@ -185,6 +373,17 @@ export function PaymentRequestCard({
       default:
         return "Pending";
     }
+  };
+
+  // Update the expiration check in both views
+  const renderExpirationInfo = () => {
+    if (!expiresAt) return null;
+    
+    return status === "pending" && !isExpired ? (
+      <span>
+        Expires {formatDistanceToNow(new Date(expiresAt), { addSuffix: true })}
+      </span>
+    ) : null;
   };
 
   // Render different views based on user role
@@ -242,11 +441,7 @@ export function PaymentRequestCard({
         <span>
           {formatDistanceToNow(new Date(message.timestamp), { addSuffix: true })}
         </span>
-        {status === "pending" && !isExpired && message.metadata.expiresAt && (
-          <span>
-            Expires {formatDistanceToNow(new Date(message.metadata.expiresAt), { addSuffix: true })}
-          </span>
-        )}
+        {renderExpirationInfo()}
       </div>
     </div>
   );
@@ -314,11 +509,7 @@ export function PaymentRequestCard({
         <span>
           {formatDistanceToNow(new Date(message.timestamp), { addSuffix: true })}
         </span>
-        {status === "pending" && !isExpired && message.metadata.expiresAt && (
-          <span>
-            Expires {formatDistanceToNow(new Date(message.metadata.expiresAt), { addSuffix: true })}
-          </span>
-        )}
+        {renderExpirationInfo()}
       </div>
     </div>
   );

@@ -35,7 +35,7 @@ export function MessageInput({
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         disabled={disabled}
-        className="pr-12 bg-zinc-900 border-none rounded-full text-white"
+        className="pr-12 bg-zinc-800/80 border-none rounded-full text-white placeholder:text-zinc-500 focus:ring-2 focus:ring-blue-500/50 transition-all duration-200"
       />
       <button
         onClick={() => {
@@ -47,7 +47,7 @@ export function MessageInput({
         className={cn(
           "absolute right-2 top-1/2 -translate-y-1/2",
           "w-8 h-8 flex items-center justify-center rounded-full",
-          "transition-colors",
+          "transition-all duration-200",
           value.trim() && !disabled
             ? "text-white hover:bg-white/10"
             : "text-zinc-500"
