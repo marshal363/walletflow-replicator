@@ -8,6 +8,7 @@ import { Navigation } from "@/components/layout/Navigation";
 import { useUserAccountsAndWallets, useAccountStore } from "@/hooks/useUserAccountsAndWallets";
 import { AnimatePresence, motion } from "framer-motion";
 import { Skeleton } from "@/components/ui/skeleton";
+import SpendingTrendWidget from "@/components/widgets/SpendingTrendWidget";
 
 // Modal states as an enum for better type safety
 enum ModalState {
@@ -104,6 +105,20 @@ export default function Home() {
               onWalletSelect={setSelectedWallet}
               isLoading={isLoading}
             />
+            
+            {/* Spending Trends Widget */}
+            <div className="px-4 py-4 bg-zinc-900 rounded-lg mx-4">
+              <SpendingTrendWidget
+                wallets={accounts?.map(account => ({
+                  id: account._id.toString(),
+                  name: account.name,
+                  icon: account.type === 'personal' ? '👤' : '🏢',
+                  color: account.type === 'personal' ? 'purple' : 'blue'
+                })) || []}
+                selectedWalletId={selectedWallet}
+                onWalletSelect={setSelectedWallet}
+              />
+            </div>
           </div>
         )}
 
