@@ -34,6 +34,8 @@ export function PaymentRequestCard({
   onAction
 }: PaymentRequestCardProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [localIsExpired, setLocalIsExpired] = useState(false);
+  const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useUser();
 
@@ -56,18 +58,45 @@ export function PaymentRequestCard({
   const requestId = message?.metadata?.requestId;
   const requestDetails = useQuery(
     api.paymentRequests.getRequestDetails, 
-    requestId ? { requestId } : "skip",
-    {
-      onError: (error) => {
-        debug.error("Failed to fetch request details", {
-          error,
-          requestId,
-          messageId,
-          message: error instanceof Error ? error.message : "Unknown error"
-        });
-      }
-    }
+    requestId ? { requestId } : "skip"
   );
+
+  // Effect for handling expiration updates
+  useEffect(() => {
+    if (!requestDetails?.request?.metadata?.expiresAt || requestDetails?.request?.status !== "pending") {
+      return;
+    }
+
+    const expirationDate = new Date(requestDetails.request.metadata.expiresAt);
+    const updateExpiration = () => {
+      const now = new Date();
+      const isExpired = expirationDate < now;
+      const diffMs = expirationDate.getTime() - now.getTime();
+      
+      setLocalIsExpired(isExpired);
+      
+      if (!isExpired && diffMs > 0) {
+        const seconds = Math.floor(diffMs / 1000);
+        if (seconds <= 60) {
+          setTimeLeft(`${seconds}s`);
+        } else {
+          setTimeLeft(formatDistanceToNow(expirationDate, { addSuffix: true }));
+        }
+      } else {
+        setTimeLeft(null);
+      }
+    };
+
+    // Initial update
+    updateExpiration();
+
+    // Update every second
+    const interval = setInterval(updateExpiration, 1000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [requestDetails?.request?.metadata?.expiresAt, requestDetails?.request?.status]);
 
   useEffect(() => {
     if (message && currentUser) {
@@ -98,9 +127,7 @@ export function PaymentRequestCard({
 
   // Get expiration from request details
   const expiresAt = requestDetails?.request?.metadata?.expiresAt;
-  const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
-  const timeUntilExpiration = expiresAt ? 
-    Math.floor((new Date(expiresAt).getTime() - new Date().getTime()) / 1000) : 0;
+  const isExpired = localIsExpired || (expiresAt ? new Date(expiresAt) < new Date() : false);
 
   // Check if the request exists
   if (requestId && (!requestDetails?.request || requestDetails instanceof Error)) {
@@ -141,7 +168,7 @@ export function PaymentRequestCard({
     status,
     amount,
     isExpired,
-    timeUntilExpiration,
+    timeLeft,
     hasWallet: !!currentUserWallet,
     requestId,
     hasRequestDetails: !!requestDetails?.request
@@ -377,11 +404,15 @@ export function PaymentRequestCard({
 
   // Update the expiration check in both views
   const renderExpirationInfo = () => {
-    if (!expiresAt) return null;
+    if (!expiresAt || status !== "pending") return null;
     
-    return status === "pending" && !isExpired ? (
-      <span>
-        Expires {formatDistanceToNow(new Date(expiresAt), { addSuffix: true })}
+    if (isExpired) {
+      return <span className="text-red-400">Expired</span>;
+    }
+    
+    return timeLeft ? (
+      <span className="text-blue-400">
+        Expires in {timeLeft}
       </span>
     ) : null;
   };
