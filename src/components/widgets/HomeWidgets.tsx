@@ -390,6 +390,12 @@ const formatBalance = (balance: number, currency: string): { sats: string, btc: 
                   </CarouselItem>
                 );
               })}
+              <CarouselItem className="basis-[85%] sm:basis-[45%] md:basis-[35%]">
+                <WalletCard
+                  type="add"
+                  onClick={() => handleAddWallet()}
+                />
+              </CarouselItem>
             </CarouselContent>
           </Carousel>
         </div>
