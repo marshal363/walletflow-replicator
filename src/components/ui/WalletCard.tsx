@@ -1,4 +1,5 @@
-import { MoreVertical, Plus, Wallet, Shield, Zap, Clock, Info, Bitcoin, ChevronRight } from "lucide-react";
+import { MoreVertical, Plus, Wallet, Shield, Zap, Clock, Info, Bitcoin, ChevronRight, ChevronDown } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -14,10 +15,15 @@ import {
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 
+interface Balance {
+  sats: string;
+  btc: string;
+}
+
 interface WalletCardProps {
   type?: 'spending' | 'savings' | 'multisig' | 'add';
   name?: string;
-  balance?: string;
+  balance?: Balance;
   lastTransaction?: string;
   onClick?: () => void;
   onSettingsClick?: (action: string) => void;
@@ -25,9 +31,9 @@ interface WalletCardProps {
 }
 
 const gradientStyles = {
-  spending: "bg-gradient-to-br from-purple-500 to-purple-900",
-  savings: "bg-gradient-to-br from-orange-500 to-orange-900",
-  multisig: "bg-gradient-to-br from-blue-500 to-blue-900",
+  spending: "bg-gradient-to-br from-purple-500/90 via-purple-600 to-purple-800",
+  savings: "bg-gradient-to-br from-orange-500/90 via-orange-600 to-orange-800",
+  multisig: "bg-gradient-to-br from-blue-500/90 via-blue-600 to-blue-800",
   add: "bg-zinc-900 border border-zinc-800",
 };
 
@@ -76,6 +82,14 @@ export function WalletCard({
   onSettingsClick,
   view = 'compact'
 }: WalletCardProps) {
+  const [showBTC, setShowBTC] = useState(false);
+  const isAddCard = type === 'add';
+  
+  const toggleBalance = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowBTC(!showBTC);
+  };
+  
   if (type === 'add') {
     return (
       <motion.div
@@ -122,18 +136,85 @@ export function WalletCard({
   return (
     <div 
       className={cn(
-        "relative rounded-xl p-6 h-[180px] cursor-pointer transition-all hover:scale-[1.02]",
-        gradientStyles[type]
+        "relative rounded-xl p-5 min-h-[180px] cursor-pointer transition-all hover:scale-[1.02]",
+        gradientStyles[type],
+        isAddCard && "hover:border-zinc-700"
       )}
       onClick={onClick}
     >
-      <div className="h-full flex flex-col justify-between">
-        <h3 className="text-xl font-medium text-white">{name}</h3>
-        <div>
-          <p className="text-3xl font-semibold text-white">{balance}</p>
+      {/* Top Actions */}
+      <div className="absolute top-3 right-3 flex gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 rounded-xl text-white/90 hover:text-white hover:bg-white/10"
+        >
+          <Plus className="h-5 w-5" />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 rounded-xl text-white/90 hover:text-white hover:bg-white/10"
+            >
+              <MoreVertical className="h-5 w-5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuItem onClick={() => onSettingsClick?.('currency')}>
+              Change Currency
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onSettingsClick?.('rename')}>
+              Rename Wallet
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onSettingsClick?.('export')}>
+              Export Data
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onSettingsClick?.('visibility')}>
+              Toggle Balance
+            </DropdownMenuItem>
+            {!isAddCard && (
+              <DropdownMenuItem 
+                onClick={() => onSettingsClick?.('delete')}
+                className="text-red-500"
+              >
+                Delete Wallet
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Card Content */}
+      <div className="h-full flex flex-col pt-2">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <p className="text-sm font-medium text-white/80 mb-1">{type}</p>
+            <h3 className="text-xl font-semibold text-white">{name}</h3>
+          </div>
+        </div>
+        
+        <div className="mt-auto">
+          {balance && (
+            <button 
+              onClick={toggleBalance}
+              className="group flex items-center gap-2 hover:opacity-90 active:opacity-80 transition-opacity"
+            >
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[28px] font-bold text-white tracking-tight">
+                  {showBTC ? `₿${balance.btc}` : balance.sats}
+                </span>
+                <span className="text-sm font-medium text-white/90">
+                  {showBTC ? 'BTC' : 'sats'}
+                </span>
+              </div>
+              <Bitcoin className="h-4 w-4 text-white/80 transition-transform group-hover:scale-110" />
+            </button>
+          )}
           {lastTransaction && (
-            <p className="text-sm text-white/60 mt-2">
-              Last transaction: {lastTransaction}
+            <p className="text-sm font-medium text-white/80 mt-2">
+              Last active: {lastTransaction}
             </p>
           )}
         </div>

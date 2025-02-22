@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Send, ArrowUpRight, ArrowDownLeft, CreditCard, QrCode, Lock, Plus, MoreVertical } from 'lucide-react';
+import { Send, ArrowUpRight, ArrowDownLeft, CreditCard, QrCode, Lock, Plus, MoreVertical, Zap } from 'lucide-react';
 import TransactionList from './TransactionList';
 import SpendingTrendWidget from './SpendingTrendWidget';
 import SuggestedActionsWidget from './SuggestedActionsWidget';
@@ -48,18 +48,18 @@ const quickActions = {
 
 const walletColors = {
   spending: {
-    color: 'bg-purple-600',
-    accent: 'text-purple-500',
+    color: 'bg-[#8B5CF6]',
+    accent: 'text-[#A78BFA]',
     icon: '💳'
   },
   savings: {
-    color: 'bg-orange-600',
-    accent: 'text-orange-500',
+    color: 'bg-[#F97316]',
+    accent: 'text-[#FB923C]',
     icon: '🏦'
   },
   multisig: {
-    color: 'bg-blue-600',
-    accent: 'text-blue-500',
+    color: 'bg-[#3B82F6]',
+    accent: 'text-[#60A5FA]',
     icon: '🔐'
   }
 };
@@ -307,17 +307,14 @@ interface QuickActionProps {
 
 const QuickActionButton: React.FC<QuickActionProps> = ({ action, walletType, onClick }) => (
   <button 
-    className="group flex flex-col items-center gap-2 relative"
+    className="flex flex-col items-center justify-center gap-1 relative"
     onClick={onClick}
     aria-label={action.label}
   >
-    <div className="w-12 h-12 bg-zinc-900 rounded-full flex items-center justify-center transition-colors group-hover:bg-zinc-800 group-active:bg-zinc-700">
-      <action.icon className={`h-5 w-5 ${walletColors[walletType].accent} transition-transform group-hover:scale-110`} />
+    <div className="w-[52px] h-[52px] bg-zinc-900 rounded-[14px] flex items-center justify-center">
+      <action.icon className={`h-[22px] w-[22px] ${walletColors[walletType].accent}`} />
     </div>
-    <span className="text-xs group-hover:text-white transition-colors">{action.label}</span>
-    <div className="absolute invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity bg-zinc-800 text-xs text-white rounded px-2 py-1 -top-8">
-      {action.description}
-    </div>
+    <span className="text-[13px] text-zinc-300">{action.label}</span>
   </button>
 );
 
@@ -333,26 +330,28 @@ const formatLastTransaction = (date: string): string => {
   return txDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 
-const formatBalance = (balance: number, currency: string): string => {
-  if (balance === 0) return '0 sats (₿0.00000000)';
-  return `${balance.toLocaleString()} sats (₿${(balance / 100000000).toFixed(8)})`;
+const formatBalance = (balance: number, currency: string): { sats: string, btc: string } => {
+  if (balance === 0) return { sats: '0', btc: '0.00000000' };
+  return {
+    sats: balance.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " "),
+    btc: (balance / 100000000).toFixed(8)
+  };
 };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       {/* Suggested Actions Widget */}
       <div className="pt-2 pb-1">
+        <h2 className="text-lg text-zinc-400 px-4 mb-3">Suggested Actions</h2>
         <SuggestedActionsWidget onActionClick={handleActionClick} />
       </div>
 
       {/* Wallet Section */}
-      <div className="space-y-4">
-        {/* Wallet Carousel */}
+      <div className="space-y-6">
+        {/* Wallet Header */}
         <div className="px-4">
-          <div className="pb-2 flex items-center justify-between">
-            <h2 className="text-sm text-zinc-400">
-              {selectedAccount.type === 'personal' ? 'Personal' : 'Business'} Wallets
-            </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg text-zinc-400">Personal Wallets</h2>
             <div className="flex gap-2">
               <Button
                 variant="ghost"
@@ -362,109 +361,79 @@ const formatBalance = (balance: number, currency: string): string => {
               >
                 <Plus className="h-4 w-4" />
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-zinc-400 hover:text-white hover:bg-white/10"
-                  >
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => console.log('Sort by name')}>
-                    Sort by Name
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => console.log('Sort by balance')}>
-                    Sort by Balance
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => console.log('Hide zero balances')}>
-                    Hide Zero Balances
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-zinc-400 hover:text-white hover:bg-white/10"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </Button>
             </div>
           </div>
+        </div>
+
+        {/* Wallet Cards */}
+        <div className="px-4">
           <Carousel className="w-full">
             <CarouselContent>
-              {wallets.map((wallet) => (
-                <CarouselItem key={wallet._id.toString()} className="basis-[85%] sm:basis-[45%] md:basis-[35%]">
-                  <WalletCard
-                    type={wallet.type}
-                    name={wallet.name}
-                    balance={formatBalance(wallet.balance || 0, wallet.currency)}
-                    lastTransaction={formatLastTransaction(wallet.lastUpdated)}
-                    onClick={() => handleWalletSelect(wallet._id.toString())}
-                  />
-                </CarouselItem>
-              ))}
-              <CarouselItem className="basis-[85%] sm:basis-[45%] md:basis-[35%]">
-                <WalletCard
-                  type="add"
-                  onClick={handleAddWallet}
-                />
-              </CarouselItem>
+              {wallets.map((wallet) => {
+                const balanceDisplay = formatBalance(wallet.balance || 0, wallet.currency);
+                return (
+                  <CarouselItem key={wallet._id.toString()} className="basis-[85%] sm:basis-[45%] md:basis-[35%]">
+                    <WalletCard
+                      type={wallet.type}
+                      name={wallet.name}
+                      balance={balanceDisplay}
+                      lastTransaction={formatLastTransaction(wallet.lastUpdated)}
+                      onClick={() => handleWalletSelect(wallet._id.toString())}
+                    />
+                  </CarouselItem>
+                );
+              })}
             </CarouselContent>
           </Carousel>
         </div>
 
-        {/* Quick Actions Grid */}
+        {/* Quick Actions */}
         {currentWallet && (
-          <div className="grid grid-cols-4 gap-4 px-4">
-            {currentActions.map((action, index) => (
-              <QuickActionButton
-                key={index}
-                action={action}
-                walletType={currentWallet.type}
-                onClick={() => handleActionClick(action.label.toLowerCase())}
-              />
-            ))}
+          <div className="px-4">
+            <div className="flex justify-between items-center">
+              {currentActions.map((action, index) => (
+                <QuickActionButton
+                  key={index}
+                  action={action}
+                  walletType={currentWallet.type}
+                  onClick={() => handleActionClick(action.label.toLowerCase())}
+                />
+              ))}
+            </div>
           </div>
         )}
-      </div>
 
-      {/* Recent Activity Widget */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="px-4"
-      >
-        {!wallets?.length ? (
-          <TransactionEmptyState onDeposit={() => handleActionClick('deposit')} />
-        ) : (
+        {/* Recent Activity */}
+        <div className="px-4 pt-2">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg">Recent Activity</h2>
+              <div className="flex items-center gap-1.5">
+                <div className="w-5 h-5 bg-white rounded-full flex items-center justify-center">
+                  <Zap className="w-3 h-3 text-black" />
+                </div>
+                <span className="text-sm text-zinc-400">Lightning Wallet</span>
+              </div>
+            </div>
+            <Button variant="ghost" size="sm" className="text-sm text-zinc-400">
+              View All
+            </Button>
+          </div>
           <TransactionList
             wallets={formattedWallets}
             selectedWalletId={internalSelectedWalletId}
             onWalletSelect={handleWalletSelect}
             onViewAll={() => navigate('/transactions')}
           />
-        )}
-      </motion.div>
-
-      {/* Spending Trends Widget */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="px-4 py-4 bg-zinc-900 rounded-lg mx-4"
-      >
-        <SpendingTrendWidget
-          wallets={formattedWallets}
-          selectedWalletId={internalSelectedWalletId}
-          onWalletSelect={handleWalletSelect}
-        />
-      </motion.div>
-
-      {/* Replace the old loading indicator with a simpler one */}
-      {accountsLoading && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex justify-center py-4"
-        >
-          <div className="w-6 h-6 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
-        </motion.div>
-      )}
+        </div>
+      </div>
     </div>
   );
 } 
