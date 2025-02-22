@@ -63,7 +63,7 @@ const SuggestedActionsWidget: React.FC<SuggestedActionsWidgetProps> = ({
   return (
     <div className="space-y-2 px-4">
       <div className="flex justify-between items-center mb-1">
-        <h2 className="text-sm text-zinc-400">Suggested Actions</h2>
+        <h2 className="text-lg text-zinc-400">Suggested Actions</h2>
       </div>
       <div className="relative overflow-hidden">
         <div className="flex snap-x snap-mandatory overflow-x-auto hide-scrollbar gap-3">

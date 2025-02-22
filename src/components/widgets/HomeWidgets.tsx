@@ -342,7 +342,6 @@ const formatBalance = (balance: number, currency: string): { sats: string, btc: 
     <div className="space-y-7">
       {/* Suggested Actions Widget */}
       <div className="pt-2 pb-1">
-        <h2 className="text-lg text-zinc-400 px-4 mb-3">Suggested Actions</h2>
         <SuggestedActionsWidget onActionClick={handleActionClick} />
       </div>
 
@@ -418,20 +417,6 @@ const formatBalance = (balance: number, currency: string): { sats: string, btc: 
 
         {/* Recent Activity */}
         <div className="px-4 pt-2">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg">Recent Activity</h2>
-              <div className="flex items-center gap-1.5">
-                <div className="w-5 h-5 bg-white rounded-full flex items-center justify-center">
-                  <Zap className="w-3 h-3 text-black" />
-                </div>
-                <span className="text-sm text-zinc-400">Lightning Wallet</span>
-              </div>
-            </div>
-            <Button variant="ghost" size="sm" className="text-sm text-zinc-400">
-              View All
-            </Button>
-          </div>
           <TransactionList
             wallets={formattedWallets}
             selectedWalletId={internalSelectedWalletId}
