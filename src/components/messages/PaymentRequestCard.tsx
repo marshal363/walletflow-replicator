@@ -64,6 +64,10 @@ export function PaymentRequestCard({
   // Effect for handling expiration updates
   useEffect(() => {
     if (!requestDetails?.request?.metadata?.expiresAt || requestDetails?.request?.status !== "pending") {
+      debug.log("Skipping expiration update - request not pending or no expiration", {
+        status: requestDetails?.request?.status,
+        expiresAt: requestDetails?.request?.metadata?.expiresAt
+      });
       return;
     }
 
@@ -72,6 +76,15 @@ export function PaymentRequestCard({
       const now = new Date();
       const isExpired = expirationDate < now;
       const diffMs = expirationDate.getTime() - now.getTime();
+      
+      debug.log("Updating expiration state", {
+        currentStatus: requestDetails.request?.status,
+        messageStatus: message?.metadata?.requestStatus,
+        isExpired,
+        diffMs,
+        expirationDate: expirationDate.toISOString(),
+        now: now.toISOString()
+      });
       
       setLocalIsExpired(isExpired);
       
@@ -96,7 +109,7 @@ export function PaymentRequestCard({
     return () => {
       clearInterval(interval);
     };
-  }, [requestDetails?.request?.metadata?.expiresAt, requestDetails?.request?.status]);
+  }, [requestDetails?.request?.metadata?.expiresAt, requestDetails?.request?.status, message?.metadata?.requestStatus]);
 
   useEffect(() => {
     if (message && currentUser) {
@@ -127,7 +140,17 @@ export function PaymentRequestCard({
 
   // Get expiration from request details
   const expiresAt = requestDetails?.request?.metadata?.expiresAt;
-  const isExpired = localIsExpired || (expiresAt ? new Date(expiresAt) < new Date() : false);
+  const isExpired = requestDetails?.request?.status !== "pending" ? false : 
+                    (localIsExpired || (expiresAt ? new Date(expiresAt) < new Date() : false));
+
+  debug.log("Final request state calculation", {
+    requestStatus: requestDetails?.request?.status,
+    messageStatus: message?.metadata?.requestStatus,
+    localIsExpired,
+    expiresAt,
+    isExpired,
+    timeLeft
+  });
 
   // Check if the request exists
   if (requestId && (!requestDetails?.request || requestDetails instanceof Error)) {
