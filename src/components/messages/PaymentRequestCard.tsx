@@ -61,6 +61,32 @@ export function PaymentRequestCard({
     requestId ? { requestId } : "skip"
   );
 
+  // Add debug logging for component state
+  useEffect(() => {
+    debug.log("PaymentRequestCard state", {
+      messageId,
+      requestId,
+      currentUserId: currentUser?._id,
+      status: message?.metadata?.requestStatus,
+      isLoading,
+      hasWallet: !!currentUserWallet,
+      requestDetails: requestDetails?.request ? {
+        status: requestDetails.request.status,
+        amount: requestDetails.request.amount,
+        type: requestDetails.request.type
+      } : null
+    });
+  }, [messageId, requestId, currentUser?._id, message?.metadata?.requestStatus, isLoading, currentUserWallet, requestDetails]);
+
+  // Add debug logging for component updates
+  useEffect(() => {
+    debug.log("PaymentRequestCard updated", {
+      messageId,
+      status: message?.metadata?.requestStatus,
+      timestamp: new Date().toISOString()
+    });
+  });
+
   // Effect for handling expiration updates
   useEffect(() => {
     if (!requestDetails?.request?.metadata?.expiresAt || requestDetails?.request?.status !== "pending") {
@@ -199,36 +225,9 @@ export function PaymentRequestCard({
 
   const handleApprove = async () => {
     if (!currentUserWallet) {
-      debug.error("No wallet found for approval");
       toast({
-        title: "Error",
-        description: "No wallet found",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!isRecipient) {
-      debug.error("Permission denied - only recipient can approve", {
-        userId: user.id,
-        recipientId: message.metadata.recipientId
-      });
-      toast({
-        title: "Error",
-        description: "You don't have permission to approve this request",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (isExpired) {
-      debug.error("Cannot approve expired request", {
-        expiresAt,
-        currentTime: new Date().toISOString()
-      });
-      toast({
-        title: "Error",
-        description: "This request has expired",
+        title: "No Wallet Found",
+        description: "Please set up your wallet first",
         variant: "destructive",
       });
       return;
@@ -238,36 +237,45 @@ export function PaymentRequestCard({
     try {
       debug.log("Approving request", {
         messageId,
-        requestId: message.metadata.requestId,
-        amount
+        requestId: message?.metadata?.requestId,
+        amount: message?.metadata?.amount,
+        currentStatus: status
       });
 
       // First update the request status
       await handleRequestAction({
-        requestId: message.metadata.requestId,
+        requestId: message?.metadata?.requestId,
+        messageId,
         action: "approved"
+      });
+
+      debug.log("Request approved, initiating transfer", {
+        messageId,
+        requestId: message?.metadata?.requestId,
+        newStatus: "approved"
       });
 
       // Then initiate the transfer
       const result = await transfer({
         sourceWalletId: currentUserWallet._id,
-        destinationUserId: message.metadata.senderId,
-        amount: message.metadata.amount,
-        description: message.content,
+        destinationUserId: message?.metadata?.senderId,
+        amount: message?.metadata?.amount,
+        description: message?.content,
         messageId,
-        conversationId: message.conversationId
+        conversationId: message?.conversationId
       });
 
       if (result.success) {
         debug.log("Payment successful", {
           messageId,
-          amount,
-          transferResult: result
+          amount: message?.metadata?.amount,
+          transferResult: result,
+          finalStatus: "approved"
         });
 
         toast({
           title: "Payment Sent",
-          description: `${amount} sats sent successfully`,
+          description: `${message?.metadata?.amount} sats sent successfully`,
         });
         onAction?.("approve");
       }
@@ -282,7 +290,8 @@ export function PaymentRequestCard({
       // Revert request status
       try {
         await handleRequestAction({
-          requestId: message.metadata.requestId,
+          requestId: message?.metadata?.requestId,
+          messageId,
           action: "declined",
           note: "Payment failed"
         });
@@ -295,31 +304,26 @@ export function PaymentRequestCard({
   };
 
   const handleDecline = async () => {
-    if (!isRecipient) {
-      debug.error("Permission denied - only recipient can decline", {
-        userId: user.id,
-        recipientId: message.metadata.recipientId
-      });
-      toast({
-        title: "Error",
-        description: "You don't have permission to decline this request",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsLoading(true);
     try {
       debug.log("Declining request", {
         messageId,
-        requestId: message.metadata.requestId
+        requestId: message?.metadata?.requestId,
+        currentStatus: status
       });
 
       await handleRequestAction({
-        requestId: message.metadata.requestId,
+        requestId: message?.metadata?.requestId,
+        messageId,
         action: "declined"
       });
-      
+
+      debug.log("Request declined successfully", {
+        messageId,
+        requestId: message?.metadata?.requestId,
+        newStatus: "declined"
+      });
+
       toast({
         title: "Request Declined",
         description: "The payment request has been declined",
@@ -355,12 +359,23 @@ export function PaymentRequestCard({
     try {
       debug.log("Cancelling request", {
         messageId,
-        requestId: message.metadata.requestId
+        requestId: message.metadata.requestId,
+        currentStatus: status,
+        timestamp: new Date().toISOString()
       });
 
+      // Update both request and message status
       await handleRequestAction({
         requestId: message.metadata.requestId,
+        messageId, // Add messageId to ensure message status is updated
         action: "cancelled"
+      });
+
+      debug.log("Request cancelled successfully", {
+        messageId,
+        requestId: message.metadata.requestId,
+        newStatus: "cancelled",
+        timestamp: new Date().toISOString()
       });
       
       toast({
@@ -369,7 +384,12 @@ export function PaymentRequestCard({
       });
       onAction?.("cancel");
     } catch (error) {
-      debug.error("Failed to cancel", error);
+      debug.error("Failed to cancel", {
+        error,
+        messageId,
+        requestId: message.metadata.requestId,
+        timestamp: new Date().toISOString()
+      });
       toast({
         title: "Error",
         description: "Failed to cancel the request",

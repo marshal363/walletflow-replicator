@@ -30,16 +30,33 @@ const debug = {
   }
 };
 
-// Add type definition for PaymentRequest
-interface PaymentRequest {
+// Add PaymentRequest type at the top of the file
+type PaymentRequest = {
   _id: Id<"paymentRequests">;
   requesterId: Id<"users">;
   recipientId: Id<"users">;
+  messageId: Id<"messages">;
   amount: number;
+  currency: string;
   type: "lightning" | "onchain";
-}
+  status: "pending" | "approved" | "declined" | "cancelled" | "completed";
+  metadata: {
+    description: string;
+    expiresAt: string;
+    paymentRequest: string;
+    customData: {
+      category: string;
+      notes?: string;
+      tags?: string[];
+    };
+    declineReason?: string;
+    cancelReason?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+};
 
-// Update helper function with proper typing
+// Helper function to create notifications with proper typing
 async function createPaymentRequestNotification(
   ctx: MutationCtx,
   {
@@ -69,19 +86,23 @@ async function createPaymentRequestNotification(
     description,
     status: "active" as const,
     priority: {
-      base: "medium",
+      base: role === "sender" ? "medium" : "high",
       modifiers: {
-        actionRequired: false,
+        actionRequired: role === "recipient",
         timeConstraint: true,
         amount: request.amount,
         role
       },
-      calculatedPriority: 45
+      calculatedPriority: role === "sender" ? 45 : 85
     },
     displayLocation: "suggested_actions" as const,
     metadata: {
-      gradient: "from-blue-500 via-purple-500 to-purple-600",
-      actionRequired: false,
+      gradient: action === "approved" 
+        ? "from-green-500 to-green-600" 
+        : action === "declined" 
+        ? "from-red-500 to-red-600"
+        : "from-blue-500 via-purple-500 to-purple-600",
+      actionRequired: role === "recipient",
       dismissible: true,
       relatedEntityId: request._id.toString(),
       relatedEntityType: "payment_request",
@@ -90,7 +111,7 @@ async function createPaymentRequestNotification(
       role,
       paymentData: {
         amount: request.amount,
-        currency: "BTC",
+        currency: request.currency,
         type: request.type,
         status: action === "approved" ? "completed" : "failed"
       }
@@ -659,102 +680,23 @@ export const handleRequestAction = mutation({
         throw new Error("Cannot approve expired request");
       }
 
-      // Handle action
-      switch (args.action) {
-        case "approved":
-          await ctx.db.patch(args.requestId, {
-            status: "approved",
-            updatedAt: now
-          });
-          break;
-        
-        case "declined":
-          await ctx.db.patch(args.requestId, {
-            status: "declined",
-            updatedAt: now,
-            metadata: {
-              ...request.metadata,
-              declineReason: args.note
-            }
-          });
-          break;
-        
-        case "cancelled":
-          await ctx.db.patch(args.requestId, {
-            status: "cancelled",
-            updatedAt: now,
-            metadata: {
-              ...request.metadata,
-              cancelReason: args.note
-            }
-          });
-          break;
-        
-        case "remind":
-          // Create reminder notification
-          await ctx.db.insert("notifications", {
-            userId: request.recipientId,
-            type: "payment_request" as const,
-            title: "Payment Request Reminder",
-            description: `Reminder: You have a pending payment request for ${request.amount} sats`,
-            status: "active" as const,
-            priority: {
-              base: "medium",
-              modifiers: {
-                actionRequired: true,
-                timeConstraint: true,
-                amount: request.amount,
-                role: "recipient"
-              },
-              calculatedPriority: 65
-            },
-            displayLocation: "suggested_actions" as const,
-            metadata: {
-              gradient: "from-blue-500 via-purple-500 to-purple-600",
-              actionRequired: true,
-              dismissible: true,
-              relatedEntityId: request._id.toString(),
-              relatedEntityType: "payment_request",
-              counterpartyId: request.requesterId,
-              visibility: "recipient_only",
-              role: "recipient",
-              paymentData: {
-                amount: request.amount,
-                currency: request.currency,
-                type: request.type,
-                status: "pending"
-              }
-            },
-            createdAt: now,
-            updatedAt: now
-          });
-          break;
-      }
+      // Update request status first
+      await ctx.db.patch(args.requestId, {
+        status: args.action === "remind" ? "pending" : args.action,
+        updatedAt: now,
+        metadata: {
+          ...request.metadata,
+          ...(args.action === "declined" && args.note ? { declineReason: args.note } : {}),
+          ...(args.action === "cancelled" && args.note ? { cancelReason: args.note } : {})
+        }
+      });
 
-      // Create notifications using helper
-      if (args.action !== "remind") {
-        // Notification for requester
-        await createPaymentRequestNotification(ctx, {
-          userId: request.requesterId,
-          title: "Payment Request Updated",
-          description: `Your payment request has been ${args.action}${args.note ? `: ${args.note}` : ""}`,
-          request,
-          role: "sender",
-          action: args.action,
-          note: args.note
-        });
-
-        // Notification for recipient
-        await createPaymentRequestNotification(ctx, {
-          userId: request.recipientId,
-          title: "Payment Request Updated",
-          description: `Payment request has been ${args.action}${args.note ? `: ${args.note}` : ""}`,
-          request,
-          role: "recipient",
-          action: args.action,
-          note: args.note
-        });
-      }
+      debug.log("Request status updated", {
+        requestId: args.requestId,
+        oldStatus: request.status,
+        newStatus: args.action === "remind" ? "pending" : args.action,
+        timestamp: now
+      });
 
       // Update message status if messageId is provided
       if (args.messageId) {
@@ -766,22 +708,114 @@ export const handleRequestAction = mutation({
               requestStatus: args.action === "remind" ? "pending" : args.action
             }
           });
+
+          debug.log("Message status updated", {
+            messageId: args.messageId,
+            oldStatus: message.metadata.requestStatus,
+            newStatus: args.action === "remind" ? "pending" : args.action,
+            timestamp: now
+          });
         }
+      }
+
+      // Create notifications for cancel action
+      if (args.action === "cancelled") {
+        // Notification for requester (who cancelled)
+        await ctx.db.insert("notifications", {
+          userId: request.requesterId,
+          type: "payment_request" as const,
+          title: "Payment Request Cancelled",
+          description: "You cancelled the payment request",
+          status: "active" as const,
+          priority: {
+            base: "medium" as const,
+            modifiers: {
+              actionRequired: false,
+              timeConstraint: false,
+              amount: request.amount,
+              role: "sender" as const
+            },
+            calculatedPriority: 45
+          },
+          displayLocation: "suggested_actions" as const,
+          metadata: {
+            gradient: "from-gray-500 to-gray-600",
+            actionRequired: false,
+            dismissible: true,
+            relatedEntityId: request._id.toString(),
+            relatedEntityType: "payment_request",
+            counterpartyId: request.recipientId,
+            visibility: "sender_only" as const,
+            role: "sender" as const,
+            paymentData: {
+              amount: request.amount,
+              currency: request.currency,
+              type: request.type,
+              status: "failed"
+            }
+          },
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // Notification for recipient
+        await ctx.db.insert("notifications", {
+          userId: request.recipientId,
+          type: "payment_request" as const,
+          title: "Payment Request Cancelled",
+          description: "The payment request has been cancelled by the requester",
+          status: "active" as const,
+          priority: {
+            base: "medium" as const,
+            modifiers: {
+              actionRequired: false,
+              timeConstraint: false,
+              amount: request.amount,
+              role: "recipient" as const
+            },
+            calculatedPriority: 45
+          },
+          displayLocation: "suggested_actions" as const,
+          metadata: {
+            gradient: "from-gray-500 to-gray-600",
+            actionRequired: false,
+            dismissible: true,
+            relatedEntityId: request._id.toString(),
+            relatedEntityType: "payment_request",
+            counterpartyId: request.requesterId,
+            visibility: "recipient_only" as const,
+            role: "recipient" as const,
+            paymentData: {
+              amount: request.amount,
+              currency: request.currency,
+              type: request.type,
+              status: "failed"
+            }
+          },
+          createdAt: now,
+          updatedAt: now
+        });
       }
 
       debug.log("Request action completed", {
         action: args.action,
-        requestId: args.requestId
+        requestId: args.requestId,
+        messageId: args.messageId,
+        notifications: "created",
+        timestamp: now
       });
 
       return {
         success: true,
         action: args.action,
-        requestId: args.requestId
+        requestId: args.requestId,
+        messageId: args.messageId
       };
     } catch (error) {
       debug.error("Request action failed", error);
       throw error;
+    } finally {
+      debug.endGroup();
     }
   }
 });
