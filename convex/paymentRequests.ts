@@ -1,6 +1,9 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { GenericDatabaseWriter } from "convex/server";
+import { DataModel } from "./_generated/dataModel";
+import { MutationCtx } from "./_generated/server";
 
 const debug = {
   log: (message: string, data?: Record<string, unknown>) => {
@@ -26,6 +29,76 @@ const debug = {
     });
   }
 };
+
+// Add type definition for PaymentRequest
+interface PaymentRequest {
+  _id: Id<"paymentRequests">;
+  requesterId: Id<"users">;
+  recipientId: Id<"users">;
+  amount: number;
+  type: "lightning" | "onchain";
+}
+
+// Update helper function with proper typing
+async function createPaymentRequestNotification(
+  ctx: MutationCtx,
+  {
+    userId,
+    title,
+    description,
+    request,
+    role,
+    action,
+    note
+  }: {
+    userId: Id<"users">;
+    title: string;
+    description: string;
+    request: PaymentRequest;
+    role: "sender" | "recipient";
+    action: string;
+    note?: string;
+  }
+) {
+  const now = new Date().toISOString();
+  
+  return await ctx.db.insert("notifications", {
+    userId,
+    type: "payment_request" as const,
+    title,
+    description,
+    status: "active" as const,
+    priority: {
+      base: "medium",
+      modifiers: {
+        actionRequired: false,
+        timeConstraint: true,
+        amount: request.amount,
+        role
+      },
+      calculatedPriority: 45
+    },
+    displayLocation: "suggested_actions" as const,
+    metadata: {
+      gradient: "from-blue-500 via-purple-500 to-purple-600",
+      actionRequired: false,
+      dismissible: true,
+      relatedEntityId: request._id.toString(),
+      relatedEntityType: "payment_request",
+      counterpartyId: role === "sender" ? request.recipientId : request.requesterId,
+      visibility: `${role}_only` as const,
+      role,
+      paymentData: {
+        amount: request.amount,
+        currency: "BTC",
+        type: request.type,
+        status: action === "approved" ? "completed" : "failed"
+      }
+    },
+    createdAt: now,
+    updatedAt: now
+  });
+}
 
 // Get payment requests for a user
 export const getPaymentRequests = query({
@@ -108,18 +181,33 @@ export const createPaymentRequest = mutation({
       updatedAt: now
     });
 
-    // Create a notification for the recipient
+    // Create notification for recipient
     await ctx.db.insert("notifications", {
       userId: args.recipientId,
       type: "payment_request",
       title: "New Payment Request",
-      content: `You have a new payment request for ${args.amount} sats`,
-      status: "unread",
+      description: `You have a new payment request for ${args.amount} sats`,
+      status: "active",
+      priority: {
+        base: "high",
+        modifiers: {
+          actionRequired: true,
+          timeConstraint: true,
+          amount: args.amount,
+          role: "recipient"
+        },
+        calculatedPriority: 85
+      },
+      displayLocation: "suggested_actions",
       metadata: {
-        relatedId: request.toString(),
-        relatedType: "payment_request",
-        priority: "high",
-        actionUrl: `/requests/${request}`,
+        gradient: "from-blue-500 via-purple-500 to-purple-600",
+        actionRequired: true,
+        dismissible: true,
+        relatedEntityId: request.toString(),
+        relatedEntityType: "payment_request",
+        counterpartyId: args.requesterId,
+        visibility: "recipient_only",
+        role: "recipient",
         paymentData: {
           amount: args.amount,
           currency: "BTC",
@@ -128,6 +216,45 @@ export const createPaymentRequest = mutation({
         }
       },
       createdAt: now,
+      updatedAt: now
+    });
+
+    // Create notification for requester
+    await ctx.db.insert("notifications", {
+      userId: args.requesterId,
+      type: "payment_request",
+      title: "Payment Request Sent",
+      description: `You sent a payment request for ${args.amount} sats`,
+      status: "active",
+      priority: {
+        base: "medium",
+        modifiers: {
+          actionRequired: false,
+          timeConstraint: true,
+          amount: args.amount,
+          role: "sender"
+        },
+        calculatedPriority: 45
+      },
+      displayLocation: "suggested_actions",
+      metadata: {
+        gradient: "from-blue-500 via-purple-500 to-purple-600",
+        actionRequired: false,
+        dismissible: true,
+        relatedEntityId: request.toString(),
+        relatedEntityType: "payment_request",
+        counterpartyId: args.recipientId,
+        visibility: "sender_only",
+        role: "sender",
+        paymentData: {
+          amount: args.amount,
+          currency: "BTC",
+          type: args.type,
+          status: "pending"
+        }
+      },
+      createdAt: now,
+      updatedAt: now
     });
 
     return request;
@@ -162,18 +289,22 @@ export const updatePaymentRequestStatus = mutation({
       userId: request.requesterId,
       type: "payment_request",
       title: "Payment Request Updated",
-      content: `Your payment request has been ${args.status}`,
-      status: "unread",
+      description: `Your payment request has been ${args.status}`,
+      status: "active",
       metadata: {
-        relatedId: args.requestId.toString(),
-        relatedType: "payment_request",
-        priority: "medium",
-        actionUrl: `/requests/${args.requestId}`,
+        gradient: "from-blue-500 via-purple-500 to-purple-600",
+        actionRequired: true,
+        dismissible: true,
+        relatedEntityId: args.requestId.toString(),
+        relatedEntityType: "payment_request",
+        counterpartyId: args.userId,
+        visibility: "recipient_only",
+        role: "recipient",
         paymentData: {
           amount: request.amount,
-          currency: request.currency,
-          type: request.type,
-          status: "completed"
+          currency: "BTC",
+          type: "lightning",
+          status: "pending"
         }
       },
       createdAt: now,
@@ -330,26 +461,80 @@ export const createChatPaymentRequest = mutation({
         timeUntilExpiration: Math.floor((new Date(expiresAt).getTime() - new Date(now).getTime()) / 1000)
       });
 
-      // Create a notification for the recipient
+      // Create notification for recipient
       await ctx.db.insert("notifications", {
         userId: args.recipientId,
         type: "payment_request",
         title: "New Payment Request",
-        content: `You have a new payment request for ${args.amount} sats`,
-        status: "unread",
+        description: `You have a new payment request for ${args.amount} sats`,
+        status: "active",
+        priority: {
+          base: "high",
+          modifiers: {
+            actionRequired: true,
+            timeConstraint: true,
+            amount: args.amount,
+            role: "recipient"
+          },
+          calculatedPriority: 85
+        },
+        displayLocation: "suggested_actions",
         metadata: {
-          relatedId: request.toString(),
-          relatedType: "payment_request",
-          priority: "high",
-          actionUrl: `/requests/${request}`,
+          gradient: "from-blue-500 via-purple-500 to-purple-600",
+          actionRequired: true,
+          dismissible: true,
+          relatedEntityId: request.toString(),
+          relatedEntityType: "payment_request",
+          counterpartyId: args.requesterId,
+          visibility: "recipient_only",
+          role: "recipient",
           paymentData: {
             amount: args.amount,
             currency: "BTC",
             type: args.type,
-            status: "pending" as const
+            status: "pending"
           }
         },
         createdAt: now,
+        updatedAt: now
+      });
+
+      // Create notification for requester
+      await ctx.db.insert("notifications", {
+        userId: args.requesterId,
+        type: "payment_request",
+        title: "Payment Request Sent",
+        description: `You sent a payment request for ${args.amount} sats`,
+        status: "active",
+        priority: {
+          base: "medium",
+          modifiers: {
+            actionRequired: false,
+            timeConstraint: true,
+            amount: args.amount,
+            role: "sender"
+          },
+          calculatedPriority: 45
+        },
+        displayLocation: "suggested_actions",
+        metadata: {
+          gradient: "from-blue-500 via-purple-500 to-purple-600",
+          actionRequired: false,
+          dismissible: true,
+          relatedEntityId: request.toString(),
+          relatedEntityType: "payment_request",
+          counterpartyId: args.recipientId,
+          visibility: "sender_only",
+          role: "sender",
+          paymentData: {
+            amount: args.amount,
+            currency: "BTC",
+            type: args.type,
+            status: "pending"
+          }
+        },
+        createdAt: now,
+        updatedAt: now
       });
 
       debug.endGroup();
@@ -370,7 +555,7 @@ export const createChatPaymentRequest = mutation({
 export const handleRequestAction = mutation({
   args: {
     requestId: v.id("paymentRequests"),
-    messageId: v.id("messages"),
+    messageId: v.optional(v.id("messages")),
     action: v.union(
       v.literal("approved"),
       v.literal("declined"),
@@ -407,12 +592,6 @@ export const handleRequestAction = mutation({
           expiresAt: request.metadata.expiresAt
         }
       });
-
-      const message = await ctx.db.get(args.messageId);
-      if (!message) {
-        debug.error("Message not found", { messageId: args.messageId });
-        throw new Error("Message not found");
-      }
 
       const now = new Date().toISOString();
       
@@ -515,83 +694,90 @@ export const handleRequestAction = mutation({
           // Create reminder notification
           await ctx.db.insert("notifications", {
             userId: request.recipientId,
-            type: "payment_request",
+            type: "payment_request" as const,
             title: "Payment Request Reminder",
-            content: `Reminder: You have a pending payment request for ${request.amount} sats`,
-            status: "unread",
+            description: `Reminder: You have a pending payment request for ${request.amount} sats`,
+            status: "active" as const,
+            priority: {
+              base: "medium",
+              modifiers: {
+                actionRequired: true,
+                timeConstraint: true,
+                amount: request.amount,
+                role: "recipient"
+              },
+              calculatedPriority: 65
+            },
+            displayLocation: "suggested_actions" as const,
             metadata: {
-              relatedId: request._id.toString(),
-              relatedType: "payment_request",
-              priority: "medium",
-              actionUrl: `/requests/${request._id}`,
+              gradient: "from-blue-500 via-purple-500 to-purple-600",
+              actionRequired: true,
+              dismissible: true,
+              relatedEntityId: request._id.toString(),
+              relatedEntityType: "payment_request",
+              counterpartyId: request.requesterId,
+              visibility: "recipient_only",
+              role: "recipient",
               paymentData: {
                 amount: request.amount,
                 currency: request.currency,
                 type: request.type,
-                status: "pending" as const
+                status: "pending"
               }
             },
-            createdAt: now
+            createdAt: now,
+            updatedAt: now
           });
           break;
       }
 
-      // Update message metadata
-      await ctx.db.patch(args.messageId, {
-        metadata: {
-          ...message.metadata,
-          requestStatus: args.action === "remind" ? message.metadata.requestStatus : args.action
-        }
-      });
-
-      // Create notification for requester (except for remind action)
+      // Create notifications using helper
       if (args.action !== "remind") {
-        // Map payment request status to transaction status
-        const getTransactionStatus = (action: typeof args.action) => {
-          switch (action) {
-            case "approved":
-              return "completed" as const;
-            case "declined":
-            case "cancelled":
-              return "failed" as const;
-            default:
-              return "pending" as const;
-          }
-        };
-
-        await ctx.db.insert("notifications", {
+        // Notification for requester
+        await createPaymentRequestNotification(ctx, {
           userId: request.requesterId,
-          type: "payment_request",
           title: "Payment Request Updated",
-          content: `Your payment request has been ${args.action}${args.note ? `: ${args.note}` : ""}`,
-          status: "unread",
-          metadata: {
-            relatedId: args.requestId.toString(),
-            relatedType: "payment_request",
-            priority: "medium",
-            actionUrl: `/requests/${args.requestId}`,
-            paymentData: {
-              amount: request.amount,
-              currency: request.currency,
-              type: request.type,
-              status: getTransactionStatus(args.action)
-            }
-          },
-          createdAt: now
+          description: `Your payment request has been ${args.action}${args.note ? `: ${args.note}` : ""}`,
+          request,
+          role: "sender",
+          action: args.action,
+          note: args.note
         });
+
+        // Notification for recipient
+        await createPaymentRequestNotification(ctx, {
+          userId: request.recipientId,
+          title: "Payment Request Updated",
+          description: `Payment request has been ${args.action}${args.note ? `: ${args.note}` : ""}`,
+          request,
+          role: "recipient",
+          action: args.action,
+          note: args.note
+        });
+      }
+
+      // Update message status if messageId is provided
+      if (args.messageId) {
+        const message = await ctx.db.get(args.messageId);
+        if (message) {
+          await ctx.db.patch(args.messageId, {
+            metadata: {
+              ...message.metadata,
+              requestStatus: args.action === "remind" ? "pending" : args.action
+            }
+          });
+        }
       }
 
       debug.log("Request action completed", {
         action: args.action,
-        requestId: args.requestId,
-        messageId: args.messageId
+        requestId: args.requestId
       });
 
       return {
         success: true,
         action: args.action,
-        requestId: args.requestId,
-        messageId: args.messageId
+        requestId: args.requestId
       };
     } catch (error) {
       debug.error("Request action failed", error);
@@ -613,7 +799,7 @@ export const getRequestHistory = query({
     const notifications = await ctx.db
       .query("notifications")
       .withIndex("by_related")
-      .filter((q) => q.eq(q.field("metadata.relatedId"), args.requestId.toString()))
+      .filter((q) => q.eq(q.field("metadata.relatedEntityId"), args.requestId.toString()))
       .collect();
 
     // Get message
@@ -761,7 +947,7 @@ export const editPaymentRequest = mutation({
       type: "payment_request",
       title: "Payment Request Updated",
       content: `The payment request amount has been updated to ${args.amount} sats`,
-      status: "unread",
+      status: "active",
       metadata: {
         relatedId: args.requestId.toString(),
         relatedType: "payment_request",

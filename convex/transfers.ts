@@ -351,6 +351,85 @@ export const transferSats = mutation({
         },
       });
 
+      // Create notifications for both users
+      const now = new Date().toISOString();
+
+      // Sender notification
+      await ctx.db.insert("notifications", {
+        userId: sourceUser._id,
+        type: "transaction",
+        title: "Payment Sent",
+        description: `You sent ${args.amount} sats to ${destinationUser.fullName}`,
+        status: "active",
+        priority: {
+          base: "medium",
+          modifiers: {
+            actionRequired: false,
+            timeConstraint: false,
+            amount: args.amount,
+            role: "sender"
+          },
+          calculatedPriority: 50
+        },
+        displayLocation: "suggested_actions",
+        metadata: {
+          gradient: "from-blue-500 to-blue-600",
+          actionRequired: false,
+          dismissible: true,
+          relatedEntityId: transfer.toString(),
+          relatedEntityType: "transfer",
+          counterpartyId: destinationUser._id,
+          visibility: "sender_only",
+          role: "sender",
+          paymentData: {
+            amount: args.amount,
+            currency: "BTC",
+            type: "lightning",
+            status: "completed"
+          }
+        },
+        createdAt: now,
+        updatedAt: now
+      });
+
+      // Recipient notification
+      await ctx.db.insert("notifications", {
+        userId: destinationUser._id,
+        type: "transaction",
+        title: "Payment Received",
+        description: `You received ${args.amount} sats from ${sourceUser.fullName}`,
+        status: "active",
+        priority: {
+          base: "medium",
+          modifiers: {
+            actionRequired: false,
+            timeConstraint: false,
+            amount: args.amount,
+            role: "recipient"
+          },
+          calculatedPriority: 50
+        },
+        displayLocation: "suggested_actions",
+        metadata: {
+          gradient: "from-green-500 to-green-600",
+          actionRequired: false,
+          dismissible: true,
+          relatedEntityId: transfer.toString(),
+          relatedEntityType: "transfer",
+          counterpartyId: sourceUser._id,
+          visibility: "recipient_only",
+          role: "recipient",
+          paymentData: {
+            amount: args.amount,
+            currency: "BTC",
+            type: "lightning",
+            status: "completed"
+          }
+        },
+        createdAt: now,
+        updatedAt: now
+      });
+
       // Update conversation's last message
       await ctx.db.patch(conversation._id, {
         lastMessageId: receivedMessage,

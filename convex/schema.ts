@@ -306,35 +306,63 @@ export default defineSchema({
   .index("by_created", ["createdAt"])
   .index("by_updated", ["updatedAt"]),
 
-  // Notifications table - Enhanced
+  // Notifications table - Enhanced for Suggested Actions
   notifications: defineTable({
     userId: v.id("users"),
     type: v.union(
-      v.literal("payment_received"),
-      v.literal("payment_sent"),
+      v.literal("transaction"),
       v.literal("payment_request"),
-      v.literal("payment_reminder"),
-      v.literal("message"),
+      v.literal("security"),
       v.literal("system")
     ),
     title: v.string(),
-    content: v.string(),
-    status: v.union(v.literal("read"), v.literal("unread")),
-    metadata: v.object({
-      actionUrl: v.optional(v.string()),
-      relatedId: v.string(), // Can reference messageId, paymentRequestId, etc.
-      relatedType: v.union(
-        v.literal("message"),
-        v.literal("payment_request"),
-        v.literal("transaction"),
-        v.literal("system")
-      ),
-      priority: v.union(
-        v.literal("low"),
+    description: v.string(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("dismissed"),
+      v.literal("actioned"),
+      v.literal("expired")
+    ),
+    priority: v.object({
+      base: v.union(
+        v.literal("high"),
         v.literal("medium"),
-        v.literal("high")
+        v.literal("low")
       ),
-      // Payment-specific data
+      modifiers: v.object({
+        actionRequired: v.boolean(),
+        timeConstraint: v.boolean(),
+        amount: v.number(),
+        role: v.union(
+          v.literal("sender"),
+          v.literal("recipient")
+        )
+      }),
+      calculatedPriority: v.number()
+    }),
+    displayLocation: v.union(
+      v.literal("suggested_actions"),
+      v.literal("toast"),
+      v.literal("both")
+    ),
+    metadata: v.object({
+      gradient: v.string(),
+      expiresAt: v.optional(v.string()),
+      actionRequired: v.boolean(),
+      dismissible: v.boolean(),
+      relatedEntityId: v.optional(v.string()),
+      relatedEntityType: v.optional(v.string()),
+      counterpartyId: v.optional(v.id("users")),
+      visibility: v.union(
+        v.literal("sender_only"),
+        v.literal("recipient_only"),
+        v.literal("both")
+      ),
+      role: v.optional(v.union(
+        v.literal("sender"),
+        v.literal("recipient")
+      )),
+      parentNotificationId: v.optional(v.id("notifications")),
       paymentData: v.optional(v.object({
         amount: v.number(),
         currency: v.string(),
@@ -350,12 +378,14 @@ export default defineSchema({
       }))
     }),
     createdAt: v.string(),
-    expiresAt: v.optional(v.string())
+    updatedAt: v.string()
   })
   .index("by_user", ["userId"])
   .index("by_status", ["status"])
   .index("by_type", ["type"])
-  .index("by_related", ["metadata.relatedId"]),
+  .index("by_priority", ["priority.calculatedPriority"])
+  .index("by_display_location", ["displayLocation"])
+  .index("by_related", ["metadata.relatedEntityId"]),
 
   // Contacts table
   contacts: defineTable({

@@ -9,6 +9,11 @@ import { useUserAccountsAndWallets, useAccountStore } from "@/hooks/useUserAccou
 import { AnimatePresence, motion } from "framer-motion";
 import { Skeleton } from "@/components/ui/skeleton";
 import SpendingTrendWidget from "@/components/widgets/SpendingTrendWidget";
+import SuggestedActionsWidget from "@/components/widgets/SuggestedActionsWidget";
+import { useNavigate } from "react-router-dom";
+import { GenericId } from "convex/values";
+import { NotificationType } from "@/lib/types";
+import { Id } from "../../convex/_generated/dataModel";
 
 // Modal states as an enum for better type safety
 enum ModalState {
@@ -34,12 +39,22 @@ export default function Home() {
     error
   } = useUserAccountsAndWallets();
 
+  const navigate = useNavigate();
+
   // Persist wallet selection
   useEffect(() => {
     localStorage.setItem('selectedWallet', selectedWallet);
   }, [selectedWallet]);
 
   const selectedAccount = accounts?.find(account => account._id === currentAccountId);
+
+  const handleDismiss = (actionId: Id<"notifications">) => {
+    // TODO: Implement dismiss logic
+  };
+
+  const handleAction = (actionId: Id<"notifications">) => {
+    // TODO: Implement action logic
+  };
 
   return (
     <div className="min-h-screen bg-black text-white">

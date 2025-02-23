@@ -354,11 +354,33 @@ const formatBalance = (balance: number, currency: string): { sats: string, btc: 
   };
 };
 
+  // Add handlers for notifications
+  const handleDismiss = (actionId: Id<"notifications">) => {
+    console.log('🔍 HomeWidgets - Dismiss Action:', {
+      event: 'Dismiss',
+      actionId: actionId.toString(),
+      timestamp: new Date().toISOString()
+    });
+    // TODO: Implement dismiss mutation
+  };
+
+  const handleAction = (actionId: Id<"notifications">) => {
+    console.log('🔍 HomeWidgets - Action Click:', {
+      event: 'Action',
+      actionId: actionId.toString(),
+      timestamp: new Date().toISOString()
+    });
+    // TODO: Implement action handler
+  };
+
   return (
     <div className="space-y-7">
       {/* Suggested Actions Widget */}
       <div className="pt-2 pb-1">
-        <SuggestedActionsWidget onActionClick={handleActionClick} />
+        <SuggestedActionsWidget
+          onDismiss={handleDismiss}
+          onAction={handleAction}
+        />
       </div>
 
       {/* Wallet Section */}

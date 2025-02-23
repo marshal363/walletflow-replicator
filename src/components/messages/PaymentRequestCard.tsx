@@ -244,7 +244,6 @@ export function PaymentRequestCard({
 
       // First update the request status
       await handleRequestAction({
-        messageId,
         requestId: message.metadata.requestId,
         action: "approved"
       });
@@ -283,7 +282,6 @@ export function PaymentRequestCard({
       // Revert request status
       try {
         await handleRequestAction({
-          messageId,
           requestId: message.metadata.requestId,
           action: "declined",
           note: "Payment failed"
@@ -318,7 +316,6 @@ export function PaymentRequestCard({
       });
 
       await handleRequestAction({
-        messageId,
         requestId: message.metadata.requestId,
         action: "declined"
       });
@@ -362,7 +359,6 @@ export function PaymentRequestCard({
       });
 
       await handleRequestAction({
-        messageId,
         requestId: message.metadata.requestId,
         action: "cancelled"
       });

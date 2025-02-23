@@ -2,6 +2,36 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
+// Calculate notification priority based on modifiers
+const calculatePriority = (base: "high" | "medium" | "low", modifiers: {
+  actionRequired: boolean;
+  timeConstraint: boolean;
+  amount: number;
+  role: "sender" | "recipient";
+}): number => {
+  const basePriority = {
+    high: 70,
+    medium: 40,
+    low: 10,
+  }[base];
+
+  const modifierPoints = {
+    actionRequired: 20,
+    timeConstraint: 15,
+    largeAmount: 10,
+    recipientRole: 5,
+  };
+
+  return Math.min(
+    100,
+    basePriority +
+      (modifiers.actionRequired ? modifierPoints.actionRequired : 0) +
+      (modifiers.timeConstraint ? modifierPoints.timeConstraint : 0) +
+      (modifiers.amount > 100000 ? modifierPoints.largeAmount : 0) +
+      (modifiers.role === "recipient" ? modifierPoints.recipientRole : 0)
+  );
+};
+
 // Get notifications for a user
 export const getNotifications = query({
   args: {
@@ -46,40 +76,238 @@ export const getUnreadCount = query({
   },
 });
 
-// Create a notification
+// Get suggested actions for a user
+export const getSuggestedActions = query({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    // Debug: Log query start
+    console.log('🔍 getSuggestedActions - Query Start:', {
+      event: 'Query Start',
+      userId: args.userId,
+      timestamp: new Date().toISOString()
+    });
+
+    const results = await ctx.db
+      .query("notifications")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("displayLocation"), "suggested_actions"),
+          q.eq(q.field("status"), "active")
+        )
+      )
+      .order("desc")
+      .take(7);
+
+    // Debug: Log query results
+    console.log('🔍 getSuggestedActions - Query Results:', {
+      event: 'Query Results',
+      userId: args.userId,
+      count: results.length,
+      notifications: results.map(n => ({
+        id: n._id,
+        type: n.type,
+        status: n.status,
+        displayLocation: n.displayLocation,
+        timestamp: new Date().toISOString()
+      }))
+    });
+
+    return results;
+  },
+});
+
+// Create a notification with optional bi-directional support
 export const createNotification = mutation({
   args: {
     userId: v.id("users"),
     type: v.union(
-      v.literal("payment_received"),
-      v.literal("payment_sent"),
+      v.literal("transaction"),
       v.literal("payment_request"),
-      v.literal("message"),
-      v.literal("security_alert"),
+      v.literal("security"),
       v.literal("system")
     ),
     title: v.string(),
-    content: v.string(),
-    metadata: v.optional(
-      v.object({
-        actionUrl: v.optional(v.string()),
-        relatedId: v.optional(v.string()),
-        priority: v.optional(
-          v.union(
-            v.literal("low"),
-            v.literal("medium"),
-            v.literal("high")
-          )
+    description: v.string(),
+    priority: v.object({
+      base: v.union(
+        v.literal("high"),
+        v.literal("medium"),
+        v.literal("low")
+      ),
+      modifiers: v.object({
+        actionRequired: v.boolean(),
+        timeConstraint: v.boolean(),
+        amount: v.number(),
+        role: v.union(v.literal("sender"), v.literal("recipient")),
+      }),
+    }),
+    displayLocation: v.union(
+      v.literal("suggested_actions"),
+      v.literal("toast"),
+      v.literal("both")
+    ),
+    metadata: v.object({
+      gradient: v.string(),
+      expiresAt: v.optional(v.string()),
+      actionRequired: v.boolean(),
+      dismissible: v.boolean(),
+      relatedEntityId: v.optional(v.string()),
+      relatedEntityType: v.optional(v.string()),
+      counterpartyId: v.optional(v.id("users")),
+      visibility: v.union(
+        v.literal("sender_only"),
+        v.literal("recipient_only"),
+        v.literal("both")
+      ),
+      role: v.optional(v.union(
+        v.literal("sender"),
+        v.literal("recipient")
+      )),
+      paymentData: v.optional(v.object({
+        amount: v.number(),
+        currency: v.string(),
+        type: v.union(v.literal("lightning"), v.literal("onchain")),
+        status: v.union(
+          v.literal("pending"),
+          v.literal("completed"),
+          v.literal("failed")
         ),
-      })
+      })),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+    
+    // Calculate priority
+    const calculatedPriority = calculatePriority(
+      args.priority.base,
+      args.priority.modifiers
+    );
+
+    // Create the main notification
+    const notificationId = await ctx.db.insert("notifications", {
+      ...args,
+      status: "active",
+      priority: {
+        ...args.priority,
+        calculatedPriority,
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Create counterparty notification if needed
+    if (
+      args.metadata.counterpartyId &&
+      args.metadata.visibility !== "sender_only"
+    ) {
+      const counterpartyRole = args.metadata.role === "sender" ? "recipient" : "sender";
+      
+      await ctx.db.insert("notifications", {
+        ...args,
+        userId: args.metadata.counterpartyId,
+        status: "active",
+        priority: {
+          ...args.priority,
+          modifiers: {
+            ...args.priority.modifiers,
+            role: counterpartyRole,
+          },
+          calculatedPriority: calculatePriority(args.priority.base, {
+            ...args.priority.modifiers,
+            role: counterpartyRole,
+          }),
+        },
+        metadata: {
+          ...args.metadata,
+          role: counterpartyRole,
+          parentNotificationId: notificationId,
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return notificationId;
+  },
+});
+
+// Update notification status
+export const updateNotificationStatus = mutation({
+  args: {
+    notificationId: v.id("notifications"),
+    status: v.union(
+      v.literal("active"),
+      v.literal("dismissed"),
+      v.literal("actioned"),
+      v.literal("expired")
     ),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("notifications", {
-      ...args,
-      status: "unread",
-      createdAt: new Date().toISOString(),
+    const notification = await ctx.db.get(args.notificationId);
+    if (!notification) throw new Error("Notification not found");
+
+    // Update the notification
+    await ctx.db.patch(args.notificationId, {
+      status: args.status,
+      updatedAt: new Date().toISOString(),
     });
+
+    // Update related notification if exists
+    if (notification.metadata.parentNotificationId) {
+      await ctx.db.patch(notification.metadata.parentNotificationId, {
+        status: args.status,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    // Find and update child notifications if this is a parent
+    const childNotifications = await ctx.db
+      .query("notifications")
+      .withIndex("by_related")
+      .filter((q) =>
+        q.eq(q.field("metadata.parentNotificationId"), args.notificationId)
+      )
+      .collect();
+
+    for (const child of childNotifications) {
+      await ctx.db.patch(child._id, {
+        status: args.status,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    return true;
+  },
+});
+
+// Clean up expired notifications
+export const cleanupExpiredNotifications = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = new Date().toISOString();
+    
+    const expiredNotifications = await ctx.db
+      .query("notifications")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("status"), "active"),
+          q.lt(q.field("metadata.expiresAt"), now)
+        )
+      )
+      .collect();
+
+    for (const notification of expiredNotifications) {
+      await ctx.db.patch(notification._id, {
+        status: "expired",
+        updatedAt: now,
+      });
+    }
+
+    return expiredNotifications.length;
   },
 });
 
@@ -92,7 +320,8 @@ export const markAsRead = mutation({
     const updates = await Promise.all(
       args.notificationIds.map((id) =>
         ctx.db.patch(id, {
-          status: "read",
+          status: "dismissed",
+          updatedAt: new Date().toISOString(),
         })
       )
     );
@@ -110,7 +339,8 @@ export const archiveNotifications = mutation({
     const updates = await Promise.all(
       args.notificationIds.map((id) =>
         ctx.db.patch(id, {
-          status: "archived",
+          status: "dismissed",
+          updatedAt: new Date().toISOString(),
         })
       )
     );
