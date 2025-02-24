@@ -1,6 +1,11 @@
 import { Id } from "../../../convex/_generated/dataModel";
 
-export type NotificationType = "transaction" | "payment_request" | "security" | "system";
+export type NotificationType = 
+  | "payment_request"
+  | "payment_sent"
+  | "payment_received"
+  | "security"
+  | "system";
 
 export type NotificationStatus = 
   | "pending" 
