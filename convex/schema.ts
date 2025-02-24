@@ -310,8 +310,9 @@ export default defineSchema({
   notifications: defineTable({
     userId: v.id("users"),
     type: v.union(
-      v.literal("transaction"),
       v.literal("payment_request"),
+      v.literal("payment_sent"),
+      v.literal("payment_received"),
       v.literal("security"),
       v.literal("system")
     ),
