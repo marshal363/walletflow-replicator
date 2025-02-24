@@ -193,7 +193,7 @@ export default defineSchema({
       name: v.optional(v.string()),
       isGroup: v.boolean(),
       createdBy: v.id("users"),
-      linkedUserId: v.id("users")
+      //linkedUserId: v.id("users")
     }),
   })
   .index("by_participants", ["participants"])

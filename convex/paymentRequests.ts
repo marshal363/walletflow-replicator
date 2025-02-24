@@ -487,7 +487,7 @@ export const createChatPaymentRequest = mutation({
         userId: args.recipientId,
         type: "payment_request",
         title: "New Payment Request",
-        description: ` ${args.amount} sats from @ ${requester.username}`,
+        description: ` ${args.amount} sats from @${requester.username}`,
         status: "active",
         priority: {
           base: "high",
@@ -525,7 +525,7 @@ export const createChatPaymentRequest = mutation({
         userId: args.requesterId,
         type: "payment_request",
         title: "Payment Request Sent",
-        description: `for ${args.amount} sats to @ ${recipient.username}`,
+        description: `for ${args.amount} sats to @${recipient.username}`,
         status: "active",
         priority: {
           base: "medium",
@@ -763,7 +763,7 @@ export const handleRequestAction = mutation({
           userId: request.recipientId,
           type: "payment_request" as const,
           title: "Payment Request Cancelled",
-          description: "The payment request has been cancelled by the requester",
+          description: `by the @${request.requesterId}`,
           status: "active" as const,
           priority: {
             base: "medium" as const,

@@ -359,7 +359,7 @@ export const transferSats = mutation({
         userId: sourceUser._id,
         type: "payment_sent",
         title: "Payment Sent",
-        description: `${args.amount} sats to @ ${destinationUser.username}`,
+        description: `${args.amount} sats to @${destinationUser.username}`,
         status: "active",
         priority: {
           base: "medium",
@@ -397,7 +397,7 @@ export const transferSats = mutation({
         userId: destinationUser._id,
         type: "payment_received",
         title: "Payment Received",
-        description: `${args.amount} sats from @ ${sourceUser.username}`,
+        description: `${args.amount} sats from @${sourceUser.username}`,
         status: "active",
         priority: {
           base: "medium",
