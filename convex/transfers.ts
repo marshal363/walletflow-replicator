@@ -357,9 +357,9 @@ export const transferSats = mutation({
       // Sender notification
       await ctx.db.insert("notifications", {
         userId: sourceUser._id,
-        type: "transaction",
+        type: "payment_sent",
         title: "Payment Sent",
-        description: `You sent ${args.amount} sats to ${destinationUser.fullName}`,
+        description: `${args.amount} sats to @ ${destinationUser.username}`,
         status: "active",
         priority: {
           base: "medium",
@@ -395,9 +395,9 @@ export const transferSats = mutation({
       // Recipient notification
       await ctx.db.insert("notifications", {
         userId: destinationUser._id,
-        type: "transaction",
+        type: "payment_received",
         title: "Payment Received",
-        description: `You received ${args.amount} sats from ${sourceUser.fullName}`,
+        description: `${args.amount} sats from @ ${sourceUser.username}`,
         status: "active",
         priority: {
           base: "medium",
