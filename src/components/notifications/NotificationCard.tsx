@@ -70,7 +70,7 @@ export function NotificationCard({
     <motion.div
       onClick={() => onAction(notification._id)}
       className={cn(
-        "relative h-[100px] overflow-hidden rounded-xl cursor-pointer group",
+        "relative h-[150px] overflow-hidden rounded-xl cursor-pointer group",
         "bg-gradient-to-r transition-all hover:scale-[1.02]",
         STATUS_COLORS[currentStatus] || STATUS_COLORS.pending
       )}
