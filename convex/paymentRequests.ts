@@ -373,6 +373,14 @@ export const createChatPaymentRequest = mutation({
       const requester = await ctx.db.get(args.requesterId);
       const recipient = await ctx.db.get(args.recipientId);
 
+      // Add detailed logging for user objects
+      debug.log("User objects retrieved", {
+        requester: JSON.stringify(requester),
+        recipient: JSON.stringify(recipient),
+        requesterUsername: requester?.username,
+        recipientUsername: recipient?.username
+      });
+
       if (!requester || !recipient) {
         debug.error("User validation failed", {
           hasRequester: !!requester,
@@ -483,6 +491,12 @@ export const createChatPaymentRequest = mutation({
       });
 
       // Create notification for recipient
+      debug.log("Creating recipient notification", {
+        recipientId: args.recipientId,
+        requesterUsername: requester.username,
+        notificationDescription: ` ${args.amount} sats from @${requester.username}`
+      });
+      
       await ctx.db.insert("notifications", {
         userId: args.recipientId,
         type: "payment_request",
@@ -521,6 +535,12 @@ export const createChatPaymentRequest = mutation({
       });
 
       // Create notification for requester
+      debug.log("Creating requester notification", {
+        requesterId: args.requesterId,
+        recipientUsername: recipient.username,
+        notificationDescription: `for ${args.amount} sats to @${recipient.username}`
+      });
+      
       await ctx.db.insert("notifications", {
         userId: args.requesterId,
         type: "payment_request",
@@ -720,6 +740,16 @@ export const handleRequestAction = mutation({
 
       // Create notifications for cancel action
       if (args.action === "cancelled") {
+        // Look up requester user object to get username
+        const requester = await ctx.db.get(request.requesterId);
+        const requesterUsername = requester?.username || "Unknown user";
+        
+        debug.log("Creating cancel notifications", {
+          requesterId: request.requesterId,
+          requesterUsername,
+          recipientId: request.recipientId
+        });
+
         // Notification for requester (who cancelled)
         await ctx.db.insert("notifications", {
           userId: request.requesterId,
@@ -763,7 +793,7 @@ export const handleRequestAction = mutation({
           userId: request.recipientId,
           type: "payment_request" as const,
           title: "Payment Request Cancelled",
-          description: `by the @${request.requesterId}`,
+          description: `by @${requesterUsername}`,
           status: "active" as const,
           priority: {
             base: "medium" as const,
@@ -790,6 +820,185 @@ export const handleRequestAction = mutation({
               currency: request.currency,
               type: request.type,
               status: "failed"
+            }
+          },
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+      
+      // Create notifications for decline action
+      if (args.action === "declined") {
+        // Look up recipient user object to get username
+        const recipient = await ctx.db.get(request.recipientId);
+        const recipientUsername = recipient?.username || "Unknown user";
+        
+        debug.log("Creating decline notifications", {
+          requesterId: request.requesterId,
+          recipientId: request.recipientId,
+          recipientUsername,
+          declineReason: args.note
+        });
+
+        // Notification for requester (whose request was declined)
+        await ctx.db.insert("notifications", {
+          userId: request.requesterId,
+          type: "payment_request" as const,
+          title: "Payment Request Declined",
+          description: `by @${recipientUsername}${args.note ? `: ${args.note}` : ''}`,
+          status: "active" as const,
+          priority: {
+            base: "medium" as const,
+            modifiers: {
+              actionRequired: false,
+              timeConstraint: false,
+              amount: request.amount,
+              role: "sender" as const
+            },
+            calculatedPriority: 45
+          },
+          displayLocation: "suggested_actions" as const,
+          metadata: {
+            gradient: "from-red-500 to-red-600",
+            actionRequired: false,
+            dismissible: true,
+            relatedEntityId: request._id.toString(),
+            relatedEntityType: "payment_request",
+            counterpartyId: request.recipientId,
+            visibility: "sender_only" as const,
+            role: "sender" as const,
+            paymentData: {
+              amount: request.amount,
+              currency: request.currency,
+              type: request.type,
+              status: "failed"
+            }
+          },
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // Notification for recipient (who declined)
+        await ctx.db.insert("notifications", {
+          userId: request.recipientId,
+          type: "payment_request" as const,
+          title: "Payment Request Declined",
+          description: "You declined the payment request",
+          status: "active" as const,
+          priority: {
+            base: "medium" as const,
+            modifiers: {
+              actionRequired: false,
+              timeConstraint: false,
+              amount: request.amount,
+              role: "recipient" as const
+            },
+            calculatedPriority: 45
+          },
+          displayLocation: "suggested_actions" as const,
+          metadata: {
+            gradient: "from-red-500 to-red-600",
+            actionRequired: false,
+            dismissible: true,
+            relatedEntityId: request._id.toString(),
+            relatedEntityType: "payment_request",
+            counterpartyId: request.requesterId,
+            visibility: "recipient_only" as const,
+            role: "recipient" as const,
+            paymentData: {
+              amount: request.amount,
+              currency: request.currency,
+              type: request.type,
+              status: "failed"
+            }
+          },
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+      
+      // Create notifications for approve action
+      if (args.action === "approved") {
+        // Look up recipient user object to get username
+        const recipient = await ctx.db.get(request.recipientId);
+        const recipientUsername = recipient?.username || "Unknown user";
+        
+        debug.log("Creating approve notifications", {
+          requesterId: request.requesterId,
+          recipientId: request.recipientId,
+          recipientUsername
+        });
+
+        // Notification for requester (whose request was approved)
+        await ctx.db.insert("notifications", {
+          userId: request.requesterId,
+          type: "payment_request" as const,
+          title: "Payment Request Approved",
+          description: `by @${recipientUsername}`,
+          status: "active" as const,
+          priority: {
+            base: "high" as const,
+            modifiers: {
+              actionRequired: false,
+              timeConstraint: false,
+              amount: request.amount,
+              role: "sender" as const
+            },
+            calculatedPriority: 75
+          },
+          displayLocation: "suggested_actions" as const,
+          metadata: {
+            gradient: "from-green-500 to-green-600",
+            actionRequired: false,
+            dismissible: true,
+            relatedEntityId: request._id.toString(),
+            relatedEntityType: "payment_request",
+            counterpartyId: request.recipientId,
+            visibility: "sender_only" as const,
+            role: "sender" as const,
+            paymentData: {
+              amount: request.amount,
+              currency: request.currency,
+              type: request.type,
+              status: "completed"
+            }
+          },
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // Notification for recipient (who approved)
+        await ctx.db.insert("notifications", {
+          userId: request.recipientId,
+          type: "payment_request" as const,
+          title: "Payment Request Approved",
+          description: "You approved the payment request",
+          status: "active" as const,
+          priority: {
+            base: "medium" as const,
+            modifiers: {
+              actionRequired: false,
+              timeConstraint: false,
+              amount: request.amount,
+              role: "recipient" as const
+            },
+            calculatedPriority: 45
+          },
+          displayLocation: "suggested_actions" as const,
+          metadata: {
+            gradient: "from-green-500 to-green-600",
+            actionRequired: false,
+            dismissible: true,
+            relatedEntityId: request._id.toString(),
+            relatedEntityType: "payment_request",
+            counterpartyId: request.requesterId,
+            visibility: "recipient_only" as const,
+            role: "recipient" as const,
+            paymentData: {
+              amount: request.amount,
+              currency: request.currency,
+              type: request.type,
+              status: "completed"
             }
           },
           createdAt: now,
