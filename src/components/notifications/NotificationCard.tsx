@@ -15,12 +15,30 @@ interface NotificationCardProps {
 }
 
 // Map notification status to display status
-function getDisplayStatus(status: "active" | "dismissed" | "actioned" | "expired", metadataStatus?: NotificationStatus): NotificationStatus {
-  switch (status) {
+function getDisplayStatus(
+  notificationStatus: "active" | "dismissed" | "actioned" | "expired", 
+  paymentDataStatus?: string
+): NotificationStatus {
+  // If we have a payment data status, use that directly
+  if (paymentDataStatus) {
+    switch (paymentDataStatus) {
+      case 'pending':
+        return 'pending';
+      case 'completed':
+        return 'completed';
+      case 'failed':
+        return 'declined'; // Map failed to declined for display
+      default:
+        return 'pending';
+    }
+  }
+  
+  // Fall back to notification status mapping
+  switch (notificationStatus) {
     case 'active':
       return 'pending';
     case 'actioned':
-      return metadataStatus === 'approved' ? 'approved' : 'completed';
+      return 'completed';
     case 'dismissed':
       return 'cancelled';
     case 'expired':
@@ -64,7 +82,19 @@ export function NotificationCard({
 }: NotificationCardProps) {
   const { metadata } = notification;
   const timeAgo = formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true });
-  const currentStatus = getDisplayStatus(notification.status, metadata.status);
+  
+  // Access the payment status from the correct path
+  const paymentStatus = metadata?.paymentData?.status;
+  
+  // Log the status information for debugging
+  console.log('Notification status info:', {
+    id: notification._id,
+    notificationStatus: notification.status,
+    paymentDataStatus: paymentStatus,
+    fullMetadata: metadata
+  });
+  
+  const currentStatus = getDisplayStatus(notification.status, paymentStatus);
   
   return (
     <motion.div
