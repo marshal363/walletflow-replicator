@@ -1,6 +1,7 @@
 ---
-description: 
-globs: 
+description: Designing databa bases schemas mutation using convex as backed as a service
+globs: *.ts
+alwaysApply: false
 ---
 
 Convex Rules

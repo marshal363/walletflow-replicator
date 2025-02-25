@@ -104,6 +104,20 @@ export function NotificationCard({
   // Get the final display status
   const currentStatus = getDisplayStatus(notification.status, paymentStatus);
   
+  // Log detailed information about the notification status determination
+  console.log("NotificationCard status calculation", {
+    notificationId: notification._id,
+    type: notification.type,
+    databaseStatus: notification.status,
+    paymentDataStatus: metadata.paymentData?.status,
+    isLocallyExpired,
+    calculatedPaymentStatus: paymentStatus,
+    finalDisplayStatus: currentStatus,
+    expiresAt: metadata.expiresAt,
+    currentTime: new Date().toISOString(),
+    isInSuggestedActions: notification.displayLocation === 'suggested_actions'
+  });
+  
   return (
     <motion.div
       onClick={() => onAction(notification._id)}

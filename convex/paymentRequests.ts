@@ -1087,6 +1087,12 @@ export const checkExpiredRequests = internalMutation({
     debug.startGroup("Check Expired Requests");
     const now = new Date();
     
+    debug.log("Starting scheduled expiration check", {
+      timestamp: now.toISOString(),
+      cronInterval: "*/5 * * * *",
+      jobType: "scheduled"
+    });
+    
     try {
       // Find pending requests that have expired
       const pendingRequests = await ctx.db
@@ -1100,10 +1106,19 @@ export const checkExpiredRequests = internalMutation({
         currentTime: now.toISOString()
       });
       
+      if (pendingRequests.length === 0) {
+        debug.log("No pending requests to check for expiration", {
+          timestamp: now.toISOString()
+        });
+        debug.endGroup();
+        return;
+      }
+      
       // Check each request for expiration
       const expiredRequests = pendingRequests.filter(request => {
         const expiresAt = new Date(request.metadata.expiresAt);
         const isExpired = expiresAt < now;
+        const timeDifference = (now.getTime() - expiresAt.getTime()) / 1000;
         
         debug.log("Checking request expiration", {
           requestId: request._id,
@@ -1111,7 +1126,9 @@ export const checkExpiredRequests = internalMutation({
           expiresAtTimestamp: expiresAt.getTime(),
           nowTimestamp: now.getTime(),
           isExpired,
-          timeDifference: (now.getTime() - expiresAt.getTime()) / 1000
+          timeDifference,
+          timeDifferenceMinutes: Math.floor(timeDifference / 60),
+          status: request.status
         });
         
         return isExpired;
@@ -1119,15 +1136,25 @@ export const checkExpiredRequests = internalMutation({
       
       debug.log("Found expired requests", {
         count: expiredRequests.length,
-        requestIds: expiredRequests.map(r => r._id)
+        requestIds: expiredRequests.map(r => r._id),
+        timestamp: now.toISOString()
       });
+      
+      if (expiredRequests.length === 0) {
+        debug.log("No expired requests found", {
+          timestamp: now.toISOString()
+        });
+        debug.endGroup();
+        return;
+      }
       
       // Process each expired request
       for (const request of expiredRequests) {
         debug.log("Processing expired request", {
           requestId: request._id,
           expiresAt: request.metadata.expiresAt,
-          currentTime: now.toISOString()
+          currentTime: now.toISOString(),
+          status: request.status
         });
         
         // Update request status to expired
@@ -1139,7 +1166,8 @@ export const checkExpiredRequests = internalMutation({
         debug.log("Updated request status to expired", {
           requestId: request._id,
           oldStatus: request.status,
-          newStatus: "expired"
+          newStatus: "expired",
+          timestamp: now.toISOString()
         });
         
         // Update existing notifications

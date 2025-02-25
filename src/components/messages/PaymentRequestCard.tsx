@@ -105,12 +105,15 @@ export function PaymentRequestCard({
       const diffMs = expirationDate.getTime() - now.getTime();
       
       debug.log("Updating expiration state", {
+        requestId: requestDetails.request._id,
         currentStatus: requestDetails.request?.status,
         messageStatus: message?.metadata?.requestStatus,
         isExpired,
         diffMs,
         expirationDate: expirationDate.toISOString(),
-        now: now.toISOString()
+        now: now.toISOString(),
+        expirationTimeDiff: Math.floor(diffMs / 1000),
+        localIsExpired
       });
       
       setLocalIsExpired(isExpired);
@@ -136,7 +139,7 @@ export function PaymentRequestCard({
     return () => {
       clearInterval(interval);
     };
-  }, [requestDetails?.request?.metadata?.expiresAt, requestDetails?.request?.status, message?.metadata?.requestStatus]);
+  }, [requestDetails?.request?.metadata?.expiresAt, requestDetails?.request?.status, message?.metadata?.requestStatus, localIsExpired]);
 
   // Add this effect to update the database when a request expires
   useEffect(() => {
@@ -150,6 +153,19 @@ export function PaymentRequestCard({
     const expirationDate = new Date(requestDetails.request.metadata.expiresAt);
     const now = new Date();
     const isExpired = expirationDate < now;
+    const diffMs = expirationDate.getTime() - now.getTime();
+
+    // Log more detailed information about expiration state
+    debug.log("Database expiration status check", {
+      requestId,
+      status: requestDetails.request.status,
+      localIsExpired,
+      isExpired,
+      expirationDiffSeconds: Math.floor(diffMs / 1000),
+      expirationDate: expirationDate.toISOString(),
+      now: now.toISOString(),
+      shouldUpdateDatabase: isExpired && requestDetails.request.status === "pending"
+    });
 
     // If the request is expired but still has "pending" status in the database, update it
     if (isExpired && requestDetails.request.status === "pending") {
