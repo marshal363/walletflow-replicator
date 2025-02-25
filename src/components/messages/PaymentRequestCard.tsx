@@ -53,6 +53,7 @@ export function PaymentRequestCard({
   // Mutations
   const handleRequestAction = useMutation(api.paymentRequests.handleRequestAction);
   const transfer = useMutation(api.transfers.transferSats);
+  const manualExpireRequest = useMutation(api.paymentRequests.manualExpireRequest);
 
   // Get request details with error handling
   const requestId = message?.metadata?.requestId;
@@ -136,6 +137,51 @@ export function PaymentRequestCard({
       clearInterval(interval);
     };
   }, [requestDetails?.request?.metadata?.expiresAt, requestDetails?.request?.status, message?.metadata?.requestStatus]);
+
+  // Add this effect to update the database when a request expires
+  useEffect(() => {
+    if (!requestDetails?.request?.metadata?.expiresAt || 
+        requestDetails?.request?.status !== "pending" || 
+        !requestId || 
+        !messageId) {
+      return;
+    }
+
+    const expirationDate = new Date(requestDetails.request.metadata.expiresAt);
+    const now = new Date();
+    const isExpired = expirationDate < now;
+
+    // If the request is expired but still has "pending" status in the database, update it
+    if (isExpired && requestDetails.request.status === "pending") {
+      debug.log("Request is expired but still pending in database, updating", {
+        requestId,
+        messageId,
+        expirationDate: expirationDate.toISOString(),
+        now: now.toISOString()
+      });
+
+      // Call the handleRequestAction with "expired" action
+      handleRequestAction({
+        requestId,
+        messageId,
+        action: "expired"
+      })
+      .then(() => {
+        debug.log("Successfully updated expired status in database", {
+          requestId,
+          messageId
+        });
+        onAction?.("expired");
+      })
+      .catch((error) => {
+        debug.error("Failed to update expired status in database", {
+          error,
+          requestId,
+          messageId
+        });
+      });
+    }
+  }, [requestDetails, requestId, messageId, handleRequestAction, onAction]);
 
   useEffect(() => {
     if (message && currentUser) {
@@ -393,6 +439,39 @@ export function PaymentRequestCard({
       toast({
         title: "Error",
         description: "Failed to cancel the request",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleManualExpire = async () => {
+    if (!requestId) return;
+    
+    setIsLoading(true);
+    try {
+      debug.log("Manually expiring request", {
+        requestId,
+        currentStatus: status
+      });
+      
+      const result = await manualExpireRequest({
+        requestId
+      });
+      
+      debug.log("Manual expire result", result);
+      
+      toast({
+        title: "Request Expired",
+        description: "The payment request has been manually expired",
+      });
+      onAction?.("expire");
+    } catch (error) {
+      debug.error("Failed to manually expire", error);
+      toast({
+        title: "Error",
+        description: "Failed to expire the request",
         variant: "destructive",
       });
     } finally {

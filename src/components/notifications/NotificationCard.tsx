@@ -1,12 +1,13 @@
 import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
-import { NotificationData, NotificationStatus, Actor } from "@/lib/types/notifications";
+import { NotificationData, NotificationStatus, Actor, PaymentStatus } from "@/lib/types/notifications";
 import { cn } from "@/lib/utils";
 import { XIcon, ChevronRightIcon } from "lucide-react";
 import { formatCurrency } from "@/lib/utils/currency";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Id } from "../../../convex/_generated/dataModel";
 import { ICON_MAP } from "./NotificationIcons";
+import { useNotificationExpiration } from "@/hooks/useNotificationExpiration";
 
 interface NotificationCardProps {
   notification: NotificationData;
@@ -14,23 +15,30 @@ interface NotificationCardProps {
   onDismiss: (id: Id<"notifications">, e: React.MouseEvent) => void;
 }
 
+// Map payment status to notification status
+function mapPaymentStatus(status: PaymentStatus): NotificationStatus {
+  switch (status) {
+    case 'pending':
+      return 'pending';
+    case 'completed':
+      return 'completed';
+    case 'failed':
+      return 'declined';
+    case 'expired':
+      return 'expired';
+    default:
+      return 'pending';
+  }
+}
+
 // Map notification status to display status
 function getDisplayStatus(
   notificationStatus: "active" | "dismissed" | "actioned" | "expired", 
-  paymentDataStatus?: string
+  paymentStatus?: PaymentStatus
 ): NotificationStatus {
-  // If we have a payment data status, use that directly
-  if (paymentDataStatus) {
-    switch (paymentDataStatus) {
-      case 'pending':
-        return 'pending';
-      case 'completed':
-        return 'completed';
-      case 'failed':
-        return 'declined'; // Map failed to declined for display
-      default:
-        return 'pending';
-    }
+  // If we have a payment status, use that directly
+  if (paymentStatus) {
+    return mapPaymentStatus(paymentStatus);
   }
   
   // Fall back to notification status mapping
@@ -42,7 +50,7 @@ function getDisplayStatus(
     case 'dismissed':
       return 'cancelled';
     case 'expired':
-      return 'declined';
+      return 'expired';
     default:
       return 'pending';
   }
@@ -54,6 +62,7 @@ const STATUS_COLORS: Record<NotificationStatus, string> = {
   cancelled: "from-gray-500 to-gray-600",
   declined: "from-red-500 to-red-600",
   approved: "from-green-500 to-green-600",
+  expired: "from-red-500 to-red-600",
 };
 
 const STATUS_BADGES: Record<NotificationStatus, { bg: string; text: string }> = {
@@ -62,6 +71,7 @@ const STATUS_BADGES: Record<NotificationStatus, { bg: string; text: string }> = 
   cancelled: { bg: "bg-gray-500/20", text: "text-gray-200" },
   declined: { bg: "bg-red-500/20", text: "text-red-200" },
   approved: { bg: "bg-green-500/20", text: "text-green-200" },
+  expired: { bg: "bg-red-500/20", text: "text-red-200" },
 };
 
 function ActorInfo({ actor, label }: { actor?: Actor; label?: string }) {
@@ -83,17 +93,15 @@ export function NotificationCard({
   const { metadata } = notification;
   const timeAgo = formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true });
   
-  // Access the payment status from the correct path
-  const paymentStatus = metadata?.paymentData?.status;
+  // Use the shared expiration hook
+  const isLocallyExpired = useNotificationExpiration(notification);
   
-  // Log the status information for debugging
-  console.log('Notification status info:', {
-    id: notification._id,
-    notificationStatus: notification.status,
-    paymentDataStatus: paymentStatus,
-    fullMetadata: metadata
-  });
+  // Get the current payment status
+  const paymentStatus = isLocallyExpired && metadata.paymentData?.status === 'pending' 
+    ? 'expired' as PaymentStatus
+    : metadata.paymentData?.status;
   
+  // Get the final display status
   const currentStatus = getDisplayStatus(notification.status, paymentStatus);
   
   return (
@@ -102,7 +110,7 @@ export function NotificationCard({
       className={cn(
         "relative h-[100px] overflow-hidden rounded-xl cursor-pointer group",
         "bg-gradient-to-r transition-all hover:scale-[1.02]",
-        STATUS_COLORS[currentStatus] || STATUS_COLORS.pending
+        STATUS_COLORS[currentStatus]
       )}
       layout
       initial={{ opacity: 0, y: 20 }}
@@ -157,11 +165,12 @@ export function NotificationCard({
           <div className="flex items-center gap-2">
             <span className={cn(
               "text-xs font-medium px-2 py-0.5 rounded-full",
-              "bg-white/10 text-white/80"
+              STATUS_BADGES[currentStatus].bg,
+              STATUS_BADGES[currentStatus].text
             )}>
               {currentStatus}
             </span>
-            {notification.priority.modifiers.actionRequired && (
+            {notification.priority.modifiers.actionRequired && !isLocallyExpired && (
               <div className="flex items-center gap-1">
                 <span className="w-1 h-1 rounded-full bg-yellow-400 animate-pulse" />
                 <span className="text-xs text-yellow-200">Action needed</span>

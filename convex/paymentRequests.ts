@@ -4,6 +4,8 @@ import { Id } from "./_generated/dataModel";
 import { GenericDatabaseWriter } from "convex/server";
 import { DataModel } from "./_generated/dataModel";
 import { MutationCtx } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
+import { defineSchedule } from "./_generated/server";
 
 const debug = {
   log: (message: string, data?: Record<string, unknown>) => {
@@ -601,7 +603,8 @@ export const handleRequestAction = mutation({
       v.literal("approved"),
       v.literal("declined"),
       v.literal("cancelled"),
-      v.literal("remind")
+      v.literal("remind"),
+      v.literal("expired")
     ),
     note: v.optional(v.string())
   },
@@ -709,7 +712,8 @@ export const handleRequestAction = mutation({
         metadata: {
           ...request.metadata,
           ...(args.action === "declined" && args.note ? { declineReason: args.note } : {}),
-          ...(args.action === "cancelled" && args.note ? { cancelReason: args.note } : {})
+          ...(args.action === "cancelled" && args.note ? { cancelReason: args.note } : {}),
+          ...(args.action === "expired" ? { expiredAt: now } : {})
         }
       });
 
@@ -756,6 +760,7 @@ export const handleRequestAction = mutation({
       const paymentStatus = 
         args.action === "approved" ? "completed" :
         args.action === "declined" || args.action === "cancelled" ? "failed" :
+        args.action === "expired" ? "expired" :
         "pending";
 
       // Update existing notifications with new status
@@ -778,50 +783,50 @@ export const handleRequestAction = mutation({
         });
       }
 
-      // Create notifications for cancel action
-      if (args.action === "cancelled") {
+      // Create notifications for expired action
+      if (args.action === "expired") {
         // Look up requester user object to get username
         const requester = await ctx.db.get(request.requesterId);
         const requesterUsername = requester?.username || "Unknown user";
         
-        debug.log("Creating cancel notifications", {
+        debug.log("Creating expiration notifications", {
           requesterId: request.requesterId,
           requesterUsername,
           recipientId: request.recipientId
         });
 
-        // Notification for requester (who cancelled)
+        // Notification for requester
         await ctx.db.insert("notifications", {
           userId: request.requesterId,
-          type: "payment_request" as const,
-          title: "Payment Request Cancelled",
-          description: "You cancelled the payment request",
-          status: "active" as const,
+          type: "payment_request",
+          title: "Payment Request Expired",
+          description: "Your payment request has expired",
+          status: "active",
           priority: {
-            base: "medium" as const,
+            base: "medium",
             modifiers: {
               actionRequired: false,
               timeConstraint: false,
               amount: request.amount,
-              role: "sender" as const
+              role: "sender"
             },
             calculatedPriority: 45
           },
-          displayLocation: "suggested_actions" as const,
+          displayLocation: "suggested_actions",
           metadata: {
-            gradient: "from-gray-500 to-gray-600",
+            gradient: "from-red-500 to-red-600",
             actionRequired: false,
             dismissible: true,
             relatedEntityId: request._id.toString(),
             relatedEntityType: "payment_request",
             counterpartyId: request.recipientId,
-            visibility: "sender_only" as const,
-            role: "sender" as const,
+            visibility: "sender_only",
+            role: "sender",
             paymentData: {
               amount: request.amount,
               currency: request.currency,
               type: request.type,
-              status: paymentStatus
+              status: "expired"
             }
           },
           createdAt: now,
@@ -831,111 +836,21 @@ export const handleRequestAction = mutation({
         // Notification for recipient
         await ctx.db.insert("notifications", {
           userId: request.recipientId,
-          type: "payment_request" as const,
-          title: "Payment Request Cancelled",
-          description: `by @${requesterUsername}`,
-          status: "active" as const,
+          type: "payment_request",
+          title: "Payment Request Expired",
+          description: `from @${requesterUsername}`,
+          status: "active",
           priority: {
-            base: "medium" as const,
+            base: "medium",
             modifiers: {
               actionRequired: false,
               timeConstraint: false,
               amount: request.amount,
-              role: "recipient" as const
+              role: "recipient"
             },
             calculatedPriority: 45
           },
-          displayLocation: "suggested_actions" as const,
-          metadata: {
-            gradient: "from-gray-500 to-gray-600",
-            actionRequired: false,
-            dismissible: true,
-            relatedEntityId: request._id.toString(),
-            relatedEntityType: "payment_request",
-            counterpartyId: request.requesterId,
-            visibility: "recipient_only" as const,
-            role: "recipient" as const,
-            paymentData: {
-              amount: request.amount,
-              currency: request.currency,
-              type: request.type,
-              status: paymentStatus
-            }
-          },
-          createdAt: now,
-          updatedAt: now
-        });
-      }
-      
-      // Create notifications for decline action
-      if (args.action === "declined") {
-        // Look up recipient user object to get username
-        const recipient = await ctx.db.get(request.recipientId);
-        const recipientUsername = recipient?.username || "Unknown user";
-        
-        debug.log("Creating decline notifications", {
-          requesterId: request.requesterId,
-          recipientId: request.recipientId,
-          recipientUsername,
-          declineReason: args.note
-        });
-
-        // Notification for requester (whose request was declined)
-        await ctx.db.insert("notifications", {
-          userId: request.requesterId,
-          type: "payment_request" as const,
-          title: "Payment Request Declined",
-          description: `by @${recipientUsername}${args.note ? `: ${args.note}` : ''}`,
-          status: "active" as const,
-          priority: {
-            base: "medium" as const,
-            modifiers: {
-              actionRequired: false,
-              timeConstraint: false,
-              amount: request.amount,
-              role: "sender" as const
-            },
-            calculatedPriority: 45
-          },
-          displayLocation: "suggested_actions" as const,
-          metadata: {
-            gradient: "from-red-500 to-red-600",
-            actionRequired: false,
-            dismissible: true,
-            relatedEntityId: request._id.toString(),
-            relatedEntityType: "payment_request",
-            counterpartyId: request.recipientId,
-            visibility: "sender_only" as const,
-            role: "sender" as const,
-            paymentData: {
-              amount: request.amount,
-              currency: request.currency,
-              type: request.type,
-              status: paymentStatus
-            }
-          },
-          createdAt: now,
-          updatedAt: now
-        });
-
-        // Notification for recipient (who declined)
-        await ctx.db.insert("notifications", {
-          userId: request.recipientId,
-          type: "payment_request" as const,
-          title: "Payment Request Declined",
-          description: "You declined the payment request",
-          status: "active" as const,
-          priority: {
-            base: "medium" as const,
-            modifiers: {
-              actionRequired: false,
-              timeConstraint: false,
-              amount: request.amount,
-              role: "recipient" as const
-            },
-            calculatedPriority: 45
-          },
-          displayLocation: "suggested_actions" as const,
+          displayLocation: "suggested_actions",
           metadata: {
             gradient: "from-red-500 to-red-600",
             actionRequired: false,
@@ -943,102 +858,13 @@ export const handleRequestAction = mutation({
             relatedEntityId: request._id.toString(),
             relatedEntityType: "payment_request",
             counterpartyId: request.requesterId,
-            visibility: "recipient_only" as const,
-            role: "recipient" as const,
+            visibility: "recipient_only",
+            role: "recipient",
             paymentData: {
               amount: request.amount,
               currency: request.currency,
               type: request.type,
-              status: paymentStatus
-            }
-          },
-          createdAt: now,
-          updatedAt: now
-        });
-      }
-      
-      // Create notifications for approve action
-      if (args.action === "approved") {
-        // Look up recipient user object to get username
-        const recipient = await ctx.db.get(request.recipientId);
-        const recipientUsername = recipient?.username || "Unknown user";
-        
-        debug.log("Creating approve notifications", {
-          requesterId: request.requesterId,
-          recipientId: request.recipientId,
-          recipientUsername
-        });
-
-        // Notification for requester (whose request was approved)
-        await ctx.db.insert("notifications", {
-          userId: request.requesterId,
-          type: "payment_request" as const,
-          title: "Payment Request Approved",
-          description: `by @${recipientUsername}`,
-          status: "active" as const,
-          priority: {
-            base: "high" as const,
-            modifiers: {
-              actionRequired: false,
-              timeConstraint: false,
-              amount: request.amount,
-              role: "sender" as const
-            },
-            calculatedPriority: 75
-          },
-          displayLocation: "suggested_actions" as const,
-          metadata: {
-            gradient: "from-green-500 to-green-600",
-            actionRequired: false,
-            dismissible: true,
-            relatedEntityId: request._id.toString(),
-            relatedEntityType: "payment_request",
-            counterpartyId: request.recipientId,
-            visibility: "sender_only" as const,
-            role: "sender" as const,
-            paymentData: {
-              amount: request.amount,
-              currency: request.currency,
-              type: request.type,
-              status: paymentStatus
-            }
-          },
-          createdAt: now,
-          updatedAt: now
-        });
-
-        // Notification for recipient (who approved)
-        await ctx.db.insert("notifications", {
-          userId: request.recipientId,
-          type: "payment_request" as const,
-          title: "Payment Request Approved",
-          description: "You approved the payment request",
-          status: "active" as const,
-          priority: {
-            base: "medium" as const,
-            modifiers: {
-              actionRequired: false,
-              timeConstraint: false,
-              amount: request.amount,
-              role: "recipient" as const
-            },
-            calculatedPriority: 45
-          },
-          displayLocation: "suggested_actions" as const,
-          metadata: {
-            gradient: "from-green-500 to-green-600",
-            actionRequired: false,
-            dismissible: true,
-            relatedEntityId: request._id.toString(),
-            relatedEntityType: "payment_request",
-            counterpartyId: request.requesterId,
-            visibility: "recipient_only" as const,
-            role: "recipient" as const,
-            paymentData: {
-              amount: request.amount,
-              currency: request.currency,
-              type: request.type,
-              status: paymentStatus
+              status: "expired"
             }
           },
           createdAt: now,
@@ -1158,7 +984,7 @@ export const getRequestDetails = query({
 
       debug.log("Request details complete", {
         requestId: args.requestId,
-        messageId: request.messageId,
+        messageId: args.requestId,
         expiresAt: request.metadata.expiresAt,
         currentTime: now.toISOString(),
         isExpired,
@@ -1253,4 +1079,466 @@ export const editPaymentRequest = mutation({
       expiresAt
     };
   },
+});
+
+// Add a scheduled function to check for expired requests
+export const checkExpiredRequests = internalMutation({
+  handler: async (ctx) => {
+    debug.startGroup("Check Expired Requests");
+    const now = new Date();
+    
+    try {
+      // Find pending requests that have expired
+      const pendingRequests = await ctx.db
+        .query("paymentRequests")
+        .filter((q) => q.eq(q.field("status"), "pending"))
+        .collect();
+      
+      debug.log("Found pending requests", {
+        count: pendingRequests.length,
+        requestIds: pendingRequests.map(r => r._id),
+        currentTime: now.toISOString()
+      });
+      
+      // Check each request for expiration
+      const expiredRequests = pendingRequests.filter(request => {
+        const expiresAt = new Date(request.metadata.expiresAt);
+        const isExpired = expiresAt < now;
+        
+        debug.log("Checking request expiration", {
+          requestId: request._id,
+          expiresAt: request.metadata.expiresAt,
+          expiresAtTimestamp: expiresAt.getTime(),
+          nowTimestamp: now.getTime(),
+          isExpired,
+          timeDifference: (now.getTime() - expiresAt.getTime()) / 1000
+        });
+        
+        return isExpired;
+      });
+      
+      debug.log("Found expired requests", {
+        count: expiredRequests.length,
+        requestIds: expiredRequests.map(r => r._id)
+      });
+      
+      // Process each expired request
+      for (const request of expiredRequests) {
+        debug.log("Processing expired request", {
+          requestId: request._id,
+          expiresAt: request.metadata.expiresAt,
+          currentTime: now.toISOString()
+        });
+        
+        // Update request status to expired
+        await ctx.db.patch(request._id, {
+          status: "expired",
+          updatedAt: now.toISOString()
+        });
+        
+        debug.log("Updated request status to expired", {
+          requestId: request._id,
+          oldStatus: request.status,
+          newStatus: "expired"
+        });
+        
+        // Update existing notifications
+        const existingNotifications = await ctx.db
+          .query("notifications")
+          .withIndex("by_related")
+          .filter((q) => q.eq(q.field("metadata.relatedEntityId"), request._id.toString()))
+          .collect();
+        
+        for (const notification of existingNotifications) {
+          await ctx.db.patch(notification._id, {
+            updatedAt: now.toISOString(),
+            metadata: {
+              ...notification.metadata,
+              paymentData: {
+                ...notification.metadata.paymentData,
+                status: "expired"
+              }
+            }
+          });
+          
+          debug.log("Updated notification for expired request", {
+            notificationId: notification._id,
+            requestId: request._id,
+            oldStatus: notification.metadata.paymentData?.status,
+            newStatus: "expired"
+          });
+        }
+        
+        // Update message if it exists
+        if (request.messageId) {
+          const message = await ctx.db.get(request.messageId);
+          if (message) {
+            await ctx.db.patch(request.messageId, {
+              metadata: {
+                ...message.metadata,
+                requestStatus: "expired"
+              }
+            });
+            
+            debug.log("Updated message status to expired", {
+              messageId: request.messageId,
+              requestId: request._id
+            });
+          }
+        }
+        
+        // Create expiration notifications for both parties
+        // For requester
+        await ctx.db.insert("notifications", {
+          userId: request.requesterId,
+          type: "payment_request",
+          title: "Payment Request Expired",
+          description: "Your payment request has expired",
+          status: "active",
+          priority: {
+            base: "medium",
+            modifiers: {
+              actionRequired: false,
+              timeConstraint: false,
+              amount: request.amount,
+              role: "sender"
+            },
+            calculatedPriority: 45
+          },
+          displayLocation: "suggested_actions",
+          metadata: {
+            gradient: "from-red-500 to-red-600",
+            actionRequired: false,
+            dismissible: true,
+            relatedEntityId: request._id.toString(),
+            relatedEntityType: "payment_request",
+            counterpartyId: request.recipientId,
+            visibility: "sender_only",
+            role: "sender",
+            paymentData: {
+              amount: request.amount,
+              currency: request.currency,
+              type: request.type,
+              status: "expired"
+            }
+          },
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString()
+        });
+        
+        // For recipient
+        await ctx.db.insert("notifications", {
+          userId: request.recipientId,
+          type: "payment_request",
+          title: "Payment Request Expired",
+          description: "A payment request has expired",
+          status: "active",
+          priority: {
+            base: "medium",
+            modifiers: {
+              actionRequired: false,
+              timeConstraint: false,
+              amount: request.amount,
+              role: "recipient"
+            },
+            calculatedPriority: 45
+          },
+          displayLocation: "suggested_actions",
+          metadata: {
+            gradient: "from-red-500 to-red-600",
+            actionRequired: false,
+            dismissible: true,
+            relatedEntityId: request._id.toString(),
+            relatedEntityType: "payment_request",
+            counterpartyId: request.requesterId,
+            visibility: "recipient_only",
+            role: "recipient",
+            paymentData: {
+              amount: request.amount,
+              currency: request.currency,
+              type: request.type,
+              status: "expired"
+            }
+          },
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString()
+        });
+      }
+      
+      return {
+        success: true,
+        pendingCount: pendingRequests.length,
+        expiredCount: expiredRequests.length
+      };
+    } catch (error) {
+      debug.error("Error checking expired requests", error);
+      throw error;
+    } finally {
+      debug.endGroup();
+    }
+  }
+});
+
+// Schedule the expiration check to run periodically
+export const scheduledFunctions = defineSchedule((scheduler) => {
+  // Run every 5 minutes
+  scheduler.cron("*/5 * * * *", "checkExpiredRequests");
+  console.log("Scheduled checkExpiredRequests to run every 5 minutes");
+});
+
+// Add a new mutation to manually check for expired requests
+export const manualCheckExpiredRequests = mutation({
+  handler: async (ctx) => {
+    debug.startGroup("Manual Check Expired Requests");
+    const now = new Date();
+    
+    try {
+      // Find all pending requests
+      const pendingRequests = await ctx.db
+        .query("paymentRequests")
+        .filter((q) => q.eq(q.field("status"), "pending"))
+        .collect();
+      
+      debug.log("Found pending requests", {
+        count: pendingRequests.length,
+        requestIds: pendingRequests.map(r => r._id),
+        currentTime: now.toISOString()
+      });
+      
+      // Check each request for expiration
+      const expiredRequests = pendingRequests.filter(request => {
+        const expiresAt = new Date(request.metadata.expiresAt);
+        const isExpired = expiresAt < now;
+        
+        debug.log("Checking request expiration", {
+          requestId: request._id,
+          expiresAt: request.metadata.expiresAt,
+          expiresAtTimestamp: expiresAt.getTime(),
+          nowTimestamp: now.getTime(),
+          isExpired,
+          timeDifference: (now.getTime() - expiresAt.getTime()) / 1000
+        });
+        
+        return isExpired;
+      });
+      
+      debug.log("Found expired requests", {
+        count: expiredRequests.length,
+        requestIds: expiredRequests.map(r => r._id)
+      });
+      
+      // Process each expired request
+      for (const request of expiredRequests) {
+        debug.log("Processing expired request", {
+          requestId: request._id,
+          expiresAt: request.metadata.expiresAt,
+          currentTime: now.toISOString()
+        });
+        
+        // Update request status to expired
+        await ctx.db.patch(request._id, {
+          status: "expired",
+          updatedAt: now.toISOString()
+        });
+        
+        debug.log("Updated request status to expired", {
+          requestId: request._id,
+          oldStatus: request.status,
+          newStatus: "expired"
+        });
+        
+        // Update existing notifications
+        const existingNotifications = await ctx.db
+          .query("notifications")
+          .withIndex("by_related")
+          .filter((q) => q.eq(q.field("metadata.relatedEntityId"), request._id.toString()))
+          .collect();
+        
+        for (const notification of existingNotifications) {
+          await ctx.db.patch(notification._id, {
+            updatedAt: now.toISOString(),
+            metadata: {
+              ...notification.metadata,
+              paymentData: {
+                ...notification.metadata.paymentData,
+                status: "expired"
+              }
+            }
+          });
+          
+          debug.log("Updated notification for expired request", {
+            notificationId: notification._id,
+            requestId: request._id,
+            oldStatus: notification.metadata.paymentData?.status,
+            newStatus: "expired"
+          });
+        }
+        
+        // Update message if it exists
+        if (request.messageId) {
+          const message = await ctx.db.get(request.messageId);
+          if (message) {
+            await ctx.db.patch(request.messageId, {
+              metadata: {
+                ...message.metadata,
+                requestStatus: "expired"
+              }
+            });
+            
+            debug.log("Updated message status to expired", {
+              messageId: request.messageId,
+              requestId: request._id
+            });
+          }
+        }
+      }
+      
+      return {
+        success: true,
+        pendingCount: pendingRequests.length,
+        expiredCount: expiredRequests.length,
+        expiredRequestIds: expiredRequests.map(r => r._id)
+      };
+    } catch (error) {
+      debug.error("Error in manual check for expired requests", error);
+      throw error;
+    } finally {
+      debug.endGroup();
+    }
+  }
+});
+
+// Add a new mutation to manually expire a specific request
+export const manualExpireRequest = mutation({
+  args: {
+    requestId: v.id("paymentRequests")
+  },
+  handler: async (ctx, args) => {
+    debug.startGroup("Manual Expire Request");
+    const now = new Date();
+    
+    try {
+      const request = await ctx.db.get(args.requestId);
+      if (!request) {
+        debug.error("Request not found", {
+          requestId: args.requestId
+        });
+        throw new Error("Payment request not found");
+      }
+      
+      debug.log("Found request", {
+        requestId: args.requestId,
+        status: request.status,
+        expiresAt: request.metadata.expiresAt
+      });
+      
+      // Update request status to expired
+      await ctx.db.patch(args.requestId, {
+        status: "expired",
+        updatedAt: now.toISOString()
+      });
+      
+      debug.log("Updated request status to expired", {
+        requestId: args.requestId,
+        oldStatus: request.status,
+        newStatus: "expired"
+      });
+      
+      // Update existing notifications
+      const existingNotifications = await ctx.db
+        .query("notifications")
+        .withIndex("by_related")
+        .filter((q) => q.eq(q.field("metadata.relatedEntityId"), args.requestId.toString()))
+        .collect();
+      
+      debug.log("Found related notifications", {
+        count: existingNotifications.length,
+        notificationIds: existingNotifications.map(n => n._id)
+      });
+      
+      for (const notification of existingNotifications) {
+        await ctx.db.patch(notification._id, {
+          updatedAt: now.toISOString(),
+          metadata: {
+            ...notification.metadata,
+            paymentData: {
+              ...notification.metadata.paymentData,
+              status: "expired"
+            }
+          }
+        });
+        
+        debug.log("Updated notification for expired request", {
+          notificationId: notification._id,
+          requestId: args.requestId,
+          oldStatus: notification.metadata.paymentData?.status,
+          newStatus: "expired"
+        });
+      }
+      
+      // Update message if it exists
+      if (request.messageId) {
+        const message = await ctx.db.get(request.messageId);
+        if (message) {
+          await ctx.db.patch(request.messageId, {
+            metadata: {
+              ...message.metadata,
+              requestStatus: "expired"
+            }
+          });
+          
+          debug.log("Updated message status to expired", {
+            messageId: request.messageId,
+            requestId: args.requestId
+          });
+        }
+      }
+      
+      return {
+        success: true,
+        requestId: args.requestId,
+        oldStatus: request.status,
+        newStatus: "expired"
+      };
+    } catch (error) {
+      debug.error("Error manually expiring request", error);
+      throw error;
+    } finally {
+      debug.endGroup();
+    }
+  }
+});
+
+// Add a new query to check the status of a specific request
+export const checkRequestStatus = query({
+  args: {
+    requestId: v.id("paymentRequests")
+  },
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.requestId);
+    if (!request) {
+      return {
+        exists: false,
+        requestId: args.requestId
+      };
+    }
+    
+    const now = new Date();
+    const expiresAt = new Date(request.metadata.expiresAt);
+    const isExpired = expiresAt < now;
+    const timeDifference = (now.getTime() - expiresAt.getTime()) / 1000;
+    
+    return {
+      exists: true,
+      requestId: args.requestId,
+      status: request.status,
+      expiresAt: request.metadata.expiresAt,
+      currentTime: now.toISOString(),
+      isExpired,
+      timeDifference,
+      message: isExpired 
+        ? `Request expired ${Math.abs(timeDifference)} seconds ago` 
+        : `Request expires in ${Math.abs(timeDifference)} seconds`
+    };
+  }
 }); 

@@ -1,36 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
-
-// Calculate notification priority based on modifiers
-const calculatePriority = (base: "high" | "medium" | "low", modifiers: {
-  actionRequired: boolean;
-  timeConstraint: boolean;
-  amount: number;
-  role: "sender" | "recipient";
-}): number => {
-  const basePriority = {
-    high: 70,
-    medium: 40,
-    low: 10,
-  }[base];
-
-  const modifierPoints = {
-    actionRequired: 20,
-    timeConstraint: 15,
-    largeAmount: 10,
-    recipientRole: 5,
-  };
-
-  return Math.min(
-    100,
-    basePriority +
-      (modifiers.actionRequired ? modifierPoints.actionRequired : 0) +
-      (modifiers.timeConstraint ? modifierPoints.timeConstraint : 0) +
-      (modifiers.amount > 100000 ? modifierPoints.largeAmount : 0) +
-      (modifiers.role === "recipient" ? modifierPoints.recipientRole : 0)
-  );
-};
+import { Doc, Id } from "./_generated/dataModel";
+import { calculatePriority } from "./utils";
+import { internal } from "./_generated/api";
 
 // Get notifications for a user
 export const getNotifications = query({
@@ -235,7 +207,131 @@ export const createNotification = mutation({
   },
 });
 
-// Update notification status
+// Check for expired notifications every 30 seconds
+export const checkExpiredNotifications = internal.cron({
+  name: "check-expired-notifications",
+  interval: "30s", // Run every 30 seconds
+  handler: async (ctx) => {
+    const now = new Date();
+    
+    // Find all active payment request notifications that might be expired
+    const expiredNotifications = await ctx.db
+      .query("notifications")
+      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .filter((q) => 
+        q.and(
+          q.eq(q.field("type"), "payment_request"),
+          q.neq(q.field("metadata.expiresAt"), undefined)
+        )
+      )
+      .collect();
+
+    // Process each notification
+    for (const notification of expiredNotifications) {
+      const expiresAt = notification.metadata.expiresAt;
+      if (!expiresAt) continue;
+
+      const expirationDate = new Date(expiresAt);
+      if (expirationDate < now) {
+        // Log the expiration
+        console.log("Expiring notification", {
+          id: notification._id,
+          expiresAt,
+          now: now.toISOString(),
+          timeDifference: (now.getTime() - expirationDate.getTime()) / 1000
+        });
+
+        // Update the notification status
+        await ctx.db.patch(notification._id, {
+          status: "expired",
+          "metadata.paymentData.status": "expired",
+          updatedAt: now.toISOString()
+        });
+
+        // Update related notifications
+        if (notification.metadata.parentNotificationId) {
+          await ctx.db.patch(notification.metadata.parentNotificationId, {
+            status: "expired",
+            "metadata.paymentData.status": "expired",
+            updatedAt: now.toISOString()
+          });
+        }
+
+        // Find and update child notifications
+        const childNotifications = await ctx.db
+          .query("notifications")
+          .withIndex("by_related")
+          .filter((q) =>
+            q.eq(q.field("metadata.parentNotificationId"), notification._id)
+          )
+          .collect();
+
+        for (const child of childNotifications) {
+          await ctx.db.patch(child._id, {
+            status: "expired",
+            "metadata.paymentData.status": "expired",
+            updatedAt: now.toISOString()
+          });
+        }
+
+        // Update the payment request if relatedEntityId exists and type is payment_request
+        if (
+          notification.metadata.relatedEntityId &&
+          notification.metadata.relatedEntityType === "payment_request"
+        ) {
+          try {
+            // Get the payment request
+            const requestId = notification.metadata.relatedEntityId;
+            const request = await ctx.db
+              .query("paymentRequests")
+              .filter((q) => q.eq(q.field("_id"), requestId))
+              .unique();
+
+            if (request && request.status === "pending") {
+              // Update the payment request status
+              await ctx.db.patch(request._id, {
+                status: "expired",
+                updatedAt: now.toISOString(),
+                metadata: {
+                  ...request.metadata,
+                  expiredAt: now.toISOString()
+                }
+              });
+
+              // Update associated message if it exists
+              if (request.messageId) {
+                const message = await ctx.db.get(request.messageId);
+                if (message) {
+                  await ctx.db.patch(message._id, {
+                    metadata: {
+                      ...message.metadata,
+                      requestStatus: "expired"
+                    }
+                  });
+                }
+              }
+
+              console.log("Payment request marked as expired", {
+                notificationId: notification._id,
+                requestId: request._id,
+                messageId: request.messageId,
+                timestamp: now.toISOString()
+              });
+            }
+          } catch (error) {
+            console.error("Failed to update payment request status", {
+              error,
+              notificationId: notification._id,
+              relatedEntityId: notification.metadata.relatedEntityId
+            });
+          }
+        }
+      }
+    }
+  }
+});
+
+// Update notification status with improved handling
 export const updateNotificationStatus = mutation({
   args: {
     notificationId: v.id("notifications"),
@@ -245,26 +341,39 @@ export const updateNotificationStatus = mutation({
       v.literal("actioned"),
       v.literal("expired")
     ),
+    paymentStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("completed"),
+        v.literal("failed"),
+        v.literal("expired")
+      )
+    )
   },
   handler: async (ctx, args) => {
     const notification = await ctx.db.get(args.notificationId);
     if (!notification) throw new Error("Notification not found");
 
-    // Update the notification
-    await ctx.db.patch(args.notificationId, {
+    const now = new Date().toISOString();
+    const updates: Partial<Doc<"notifications">> = {
       status: args.status,
-      updatedAt: new Date().toISOString(),
-    });
+      updatedAt: now
+    };
+
+    // Update payment status if provided
+    if (args.paymentStatus && notification.metadata.paymentData) {
+      updates["metadata.paymentData.status"] = args.paymentStatus;
+    }
+
+    // Update the notification
+    await ctx.db.patch(args.notificationId, updates);
 
     // Update related notification if exists
     if (notification.metadata.parentNotificationId) {
-      await ctx.db.patch(notification.metadata.parentNotificationId, {
-        status: args.status,
-        updatedAt: new Date().toISOString(),
-      });
+      await ctx.db.patch(notification.metadata.parentNotificationId, updates);
     }
 
-    // Find and update child notifications if this is a parent
+    // Find and update child notifications
     const childNotifications = await ctx.db
       .query("notifications")
       .withIndex("by_related")
@@ -274,10 +383,7 @@ export const updateNotificationStatus = mutation({
       .collect();
 
     for (const child of childNotifications) {
-      await ctx.db.patch(child._id, {
-        status: args.status,
-        updatedAt: new Date().toISOString(),
-      });
+      await ctx.db.patch(child._id, updates);
     }
 
     return true;

@@ -30,6 +30,7 @@ import type * as transactions from "../transactions.js";
 import type * as transfers from "../transfers.js";
 import type * as users from "../users.js";
 import type * as utils_walletHelpers from "../utils/walletHelpers.js";
+import type * as utils from "../utils.js";
 import type * as wallets from "../wallets.js";
 
 /**
@@ -58,6 +59,7 @@ declare const fullApi: ApiFromModules<{
   transfers: typeof transfers;
   users: typeof users;
   "utils/walletHelpers": typeof utils_walletHelpers;
+  utils: typeof utils;
   wallets: typeof wallets;
 }>;
 export declare const api: FilterApi<

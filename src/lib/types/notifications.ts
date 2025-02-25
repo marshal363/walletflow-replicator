@@ -12,7 +12,14 @@ export type NotificationStatus =
   | "completed" 
   | "cancelled" 
   | "declined" 
-  | "approved";
+  | "approved"
+  | "expired";
+
+export type PaymentStatus = 
+  | "pending"
+  | "completed"
+  | "failed"
+  | "expired";
 
 export interface Actor {
   id: Id<"users">;
@@ -27,6 +34,13 @@ export interface StatusChange {
   reason?: string;
 }
 
+export interface PaymentData {
+  amount: number;
+  currency: string;
+  type: "lightning" | "onchain";
+  status: PaymentStatus;
+}
+
 export interface NotificationMetadata {
   gradient: string;
   dismissible: boolean;
@@ -37,10 +51,8 @@ export interface NotificationMetadata {
   actor?: Actor;
   counterparty?: Actor;
   
-  // Transaction/Payment specific
-  amount?: number;
-  currency?: string;
-  method?: string; // "transfer", "lightning", "onchain"
+  // Payment specific
+  paymentData?: PaymentData;
   
   // Status tracking
   status: NotificationStatus;
