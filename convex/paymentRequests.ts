@@ -700,9 +700,11 @@ export const handleRequestAction = mutation({
         throw new Error("Cannot approve expired request");
       }
 
+      const newStatus = args.action === "remind" ? "pending" : args.action;
+      
       // Update request status first
       await ctx.db.patch(args.requestId, {
-        status: args.action === "remind" ? "pending" : args.action,
+        status: newStatus,
         updatedAt: now,
         metadata: {
           ...request.metadata,
@@ -714,7 +716,7 @@ export const handleRequestAction = mutation({
       debug.log("Request status updated", {
         requestId: args.requestId,
         oldStatus: request.status,
-        newStatus: args.action === "remind" ? "pending" : args.action,
+        newStatus,
         timestamp: now
       });
 
@@ -725,17 +727,55 @@ export const handleRequestAction = mutation({
           await ctx.db.patch(args.messageId, {
             metadata: {
               ...message.metadata,
-              requestStatus: args.action === "remind" ? "pending" : args.action
+              requestStatus: newStatus
             }
           });
 
           debug.log("Message status updated", {
             messageId: args.messageId,
             oldStatus: message.metadata.requestStatus,
-            newStatus: args.action === "remind" ? "pending" : args.action,
+            newStatus,
             timestamp: now
           });
         }
+      }
+
+      // Find and update existing notifications for this request
+      const existingNotifications = await ctx.db
+        .query("notifications")
+        .withIndex("by_related")
+        .filter((q) => q.eq(q.field("metadata.relatedEntityId"), args.requestId.toString()))
+        .collect();
+
+      debug.log("Existing notifications", {
+        count: existingNotifications.length,
+        notificationIds: existingNotifications.map(n => n._id)
+      });
+
+      // Map action to payment status
+      const paymentStatus = 
+        args.action === "approved" ? "completed" :
+        args.action === "declined" || args.action === "cancelled" ? "failed" :
+        "pending";
+
+      // Update existing notifications with new status
+      for (const notification of existingNotifications) {
+        await ctx.db.patch(notification._id, {
+          updatedAt: now,
+          metadata: {
+            ...notification.metadata,
+            paymentData: {
+              ...notification.metadata.paymentData,
+              status: paymentStatus
+            }
+          }
+        });
+        
+        debug.log("Updated notification", {
+          notificationId: notification._id,
+          oldStatus: notification.metadata.paymentData?.status,
+          newStatus: paymentStatus
+        });
       }
 
       // Create notifications for cancel action
@@ -781,7 +821,7 @@ export const handleRequestAction = mutation({
               amount: request.amount,
               currency: request.currency,
               type: request.type,
-              status: "failed"
+              status: paymentStatus
             }
           },
           createdAt: now,
@@ -819,7 +859,7 @@ export const handleRequestAction = mutation({
               amount: request.amount,
               currency: request.currency,
               type: request.type,
-              status: "failed"
+              status: paymentStatus
             }
           },
           createdAt: now,
@@ -871,7 +911,7 @@ export const handleRequestAction = mutation({
               amount: request.amount,
               currency: request.currency,
               type: request.type,
-              status: "failed"
+              status: paymentStatus
             }
           },
           createdAt: now,
@@ -909,7 +949,7 @@ export const handleRequestAction = mutation({
               amount: request.amount,
               currency: request.currency,
               type: request.type,
-              status: "failed"
+              status: paymentStatus
             }
           },
           createdAt: now,
@@ -960,7 +1000,7 @@ export const handleRequestAction = mutation({
               amount: request.amount,
               currency: request.currency,
               type: request.type,
-              status: "completed"
+              status: paymentStatus
             }
           },
           createdAt: now,
@@ -998,7 +1038,7 @@ export const handleRequestAction = mutation({
               amount: request.amount,
               currency: request.currency,
               type: request.type,
-              status: "completed"
+              status: paymentStatus
             }
           },
           createdAt: now,
