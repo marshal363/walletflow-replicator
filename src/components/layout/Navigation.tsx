@@ -1,10 +1,42 @@
 import { Home, Wallet, Zap, Bell, Mail } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
 
 export function Navigation() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    // Function to check if modal is open
+    const checkModalState = () => {
+      setIsModalOpen(document.body.getAttribute('data-modal-open') === 'true');
+    };
+
+    // Initial check
+    checkModalState();
+
+    // Create observer to watch for attribute changes
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.attributeName === 'data-modal-open') {
+          checkModalState();
+        }
+      });
+    });
+
+    // Start observing
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['data-modal-open']
+    });
+
+    // Cleanup
+    return () => observer.disconnect();
+  }, []);
+
+  if (isModalOpen) return null;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50">
