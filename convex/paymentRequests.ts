@@ -5,7 +5,10 @@ import { GenericDatabaseWriter } from "convex/server";
 import { DataModel } from "./_generated/dataModel";
 import { MutationCtx } from "./_generated/server";
 import { internalMutation } from "./_generated/server";
-import { defineSchedule } from "./_generated/server";
+import { Crons } from "convex/server";
+import { cronJobs } from "convex/server";
+import { internal } from "./_generated/api";
+import { defineSchema, defineTable } from "convex/server";
 
 const debug = {
   log: (message: string, data?: Record<string, unknown>) => {
@@ -32,8 +35,65 @@ const debug = {
   }
 };
 
-// Add PaymentRequest type at the top of the file
-type PaymentRequest = {
+// Add type definitions at the top of the file
+type NotificationStatus = "active" | "dismissed" | "actioned" | "expired";
+type PaymentStatus = "pending" | "completed" | "failed" | "expired";
+type RequestStatus = "pending" | "approved" | "declined" | "cancelled" | "completed" | "expired";
+type NotificationType = "system" | "payment_request" | "payment_sent" | "payment_received" | "security";
+type DisplayLocation = "suggested_actions" | "toast" | "both";
+type Role = "sender" | "recipient";
+type Visibility = "sender_only" | "recipient_only" | "both";
+
+type PaymentData = {
+  amount: number;
+  currency: string;
+  type: "lightning" | "onchain";
+  status: PaymentStatus;
+};
+
+type NotificationMetadata = {
+  gradient: string;
+  expiresAt?: string;
+  actionRequired: boolean;
+  dismissible: boolean;
+  relatedEntityId?: string;
+  relatedEntityType?: string;
+  counterpartyId?: Id<"users">;
+  visibility: Visibility;
+  role: Role;
+  paymentData?: PaymentData;
+};
+
+type NotificationPriority = {
+  base: "high" | "medium" | "low";
+  modifiers: {
+    actionRequired: boolean;
+    timeConstraint: boolean;
+    amount: number;
+    role: Role;
+  };
+  calculatedPriority: number;
+};
+
+type Notification = {
+  _id: Id<"notifications">;
+  userId: Id<"users">;
+  type: NotificationType;
+  title: string;
+  description: string;
+  status: NotificationStatus;
+  priority: NotificationPriority;
+  displayLocation: DisplayLocation;
+  metadata: NotificationMetadata;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Update the base types to match our schema
+type PaymentRequestStatus = "pending" | "approved" | "declined" | "cancelled" | "completed" | "expired";
+
+// Update PaymentRequest type
+export type PaymentRequest = {
   _id: Id<"paymentRequests">;
   requesterId: Id<"users">;
   recipientId: Id<"users">;
@@ -41,7 +101,7 @@ type PaymentRequest = {
   amount: number;
   currency: string;
   type: "lightning" | "onchain";
-  status: "pending" | "approved" | "declined" | "cancelled" | "completed";
+  status: PaymentRequestStatus;
   metadata: {
     description: string;
     expiresAt: string;
@@ -53,6 +113,7 @@ type PaymentRequest = {
     };
     declineReason?: string;
     cancelReason?: string;
+    expiredAt?: string;
   };
   createdAt: string;
   updatedAt: string;
@@ -158,101 +219,58 @@ export const createPaymentRequest = mutation({
     requesterId: v.id("users"),
     recipientId: v.id("users"),
     conversationId: v.id("conversations"),
+    messageId: v.id("messages"),
     amount: v.number(),
+    currency: v.string(),
     type: v.union(v.literal("lightning"), v.literal("onchain")),
     description: v.string(),
     expiresAt: v.string(),
   },
   handler: async (ctx, args) => {
-    const now = new Date().toISOString();
+    const now = new Date();
+    // Set expiration date to 24 hours from now
+    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
     
-    // Create the message first
-    const message = await ctx.db.insert("messages", {
-      conversationId: args.conversationId,
-      senderId: args.requesterId,
-      content: args.description,
-      timestamp: now,
-      status: "sent",
-      type: "payment_request",
-      metadata: {
-        amount: args.amount,
-        recipientId: args.recipientId,
-        senderId: args.requesterId,
-        requestStatus: "pending",
-        visibility: "both"
-      },
+    console.log("Creating payment request with expiration", {
+      timestamp: now.toISOString(),
+      expiresAt,
+      type: args.type,
+      amount: args.amount
     });
 
-    // Create the payment request
     const request = await ctx.db.insert("paymentRequests", {
       requesterId: args.requesterId,
       recipientId: args.recipientId,
-      messageId: message,
+      messageId: args.messageId,
       amount: args.amount,
-      currency: "BTC",
+      currency: args.currency,
       type: args.type,
       status: "pending",
       metadata: {
         description: args.description,
-        expiresAt: args.expiresAt,
+        expiresAt,
         paymentRequest: "",
         customData: {
           category: "direct_request",
+          notes: "",
+          tags: []
         }
       },
-      createdAt: now,
-      updatedAt: now
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
     });
 
-    // Create notification for recipient
-    await ctx.db.insert("notifications", {
-      userId: args.recipientId,
-      type: "payment_request",
-      title: "New Payment Request",
-      description: `You have a new payment request for ${args.amount} sats`,
-      status: "active",
-      priority: {
-        base: "high",
-        modifiers: {
-          actionRequired: true,
-          timeConstraint: true,
-          amount: args.amount,
-          role: "recipient"
-        },
-        calculatedPriority: 85
-      },
-      displayLocation: "suggested_actions",
-      metadata: {
-        gradient: "from-blue-500 via-purple-500 to-purple-600",
-        actionRequired: true,
-        dismissible: true,
-        relatedEntityId: request.toString(),
-        relatedEntityType: "payment_request",
-        counterpartyId: args.requesterId,
-        visibility: "recipient_only",
-        role: "recipient",
-        paymentData: {
-          amount: args.amount,
-          currency: "BTC",
-          type: args.type,
-          status: "pending"
-        }
-      },
-      createdAt: now,
-      updatedAt: now
-    });
-
-    // Create notification for requester
+    // Create notification with expiration
     await ctx.db.insert("notifications", {
       userId: args.requesterId,
       type: "payment_request",
-      title: "Payment Request Sent",
-      description: `You sent a payment request for ${args.amount} sats`,
+      title: "Payment Request Created",
+      description: "Your payment request is pending",
       status: "active",
       priority: {
         base: "medium",
         modifiers: {
-          actionRequired: false,
+          actionRequired: true,
           timeConstraint: true,
           amount: args.amount,
           role: "sender"
@@ -262,22 +280,28 @@ export const createPaymentRequest = mutation({
       displayLocation: "suggested_actions",
       metadata: {
         gradient: "from-blue-500 via-purple-500 to-purple-600",
-        actionRequired: false,
-        dismissible: true,
+        expiresAt,
+        actionRequired: true,
+        dismissible: false,
         relatedEntityId: request.toString(),
         relatedEntityType: "payment_request",
-        counterpartyId: args.recipientId,
         visibility: "sender_only",
         role: "sender",
         paymentData: {
           amount: args.amount,
-          currency: "BTC",
+          currency: args.currency,
           type: args.type,
           status: "pending"
         }
       },
-      createdAt: now,
-      updatedAt: now
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
+    });
+
+    console.log("Created payment request and notification", {
+      requestId: request,
+      expiresAt,
+      timestamp: now.toISOString()
     });
 
     return request;
@@ -287,54 +311,61 @@ export const createPaymentRequest = mutation({
 // Update payment request status
 export const updatePaymentRequestStatus = mutation({
   args: {
-    requestId: v.id("paymentRequests"),
+    paymentRequestId: v.id("paymentRequests"),
     status: v.union(
+      v.literal("pending"),
       v.literal("approved"),
       v.literal("declined"),
       v.literal("cancelled"),
-      v.literal("completed")
+      v.literal("completed"),
+      v.literal("expired")
     ),
+    reason: v.optional(v.string())
   },
   handler: async (ctx, args) => {
-    const request = await ctx.db.get(args.requestId);
+    const request = await ctx.db.get(args.paymentRequestId);
     if (!request) {
       throw new Error("Payment request not found");
     }
 
     const now = new Date().toISOString();
-    await ctx.db.patch(args.requestId, {
+    await ctx.db.patch(args.paymentRequestId, {
       status: args.status,
       updatedAt: now,
+      metadata: {
+        ...request.metadata,
+        ...(args.status === "declined" && args.reason ? { declineReason: args.reason } : {}),
+        ...(args.status === "cancelled" && args.reason ? { cancelReason: args.reason } : {}),
+        ...(args.status === "expired" ? { expiredAt: now } : {})
+      }
     });
 
-    // Create a notification for the requester
-    await ctx.db.insert("notifications", {
-      userId: request.requesterId,
+    // Create notification for status update
+    await ctx.scheduler.runAfter(0, internal.notifications.createNotification, {
+      userId: request.recipientId,
       type: "payment_request",
-      title: "Payment Request Updated",
+      title: `Payment Request ${args.status}`,
       description: `Your payment request has been ${args.status}`,
-      status: "active",
       metadata: {
-        gradient: "from-blue-500 via-purple-500 to-purple-600",
-        actionRequired: true,
+        gradient: "blue",
+        actionRequired: false,
         dismissible: true,
-        relatedEntityId: args.requestId.toString(),
+        relatedEntityId: args.paymentRequestId.toString(),
         relatedEntityType: "payment_request",
-        counterpartyId: args.userId,
-        visibility: "recipient_only",
+        counterpartyId: request.recipientId,
+        visibility: "both",
         role: "recipient",
         paymentData: {
           amount: request.amount,
-          currency: "BTC",
-          type: "lightning",
+          currency: request.currency,
+          type: request.type,
           status: "pending"
         }
-      },
-      createdAt: now,
+      }
     });
 
-    return request;
-  },
+    return { success: true };
+  }
 });
 
 // Create a new payment request from chat
@@ -1308,11 +1339,15 @@ export const checkExpiredRequests = internalMutation({
 });
 
 // Schedule the expiration check to run periodically
-export const scheduledFunctions = defineSchedule((scheduler) => {
-  // Run every 5 minutes
-  scheduler.cron("*/5 * * * *", "checkExpiredRequests");
-  console.log("Scheduled checkExpiredRequests to run every 5 minutes");
-});
+export const crons = new Crons();
+crons.interval(
+  "check-expired-requests",
+  { minutes: 5 },
+  async (ctx) => {
+    console.log("Running scheduled checkExpiredRequests");
+    await checkExpiredRequests.handler(ctx);
+  }
+);
 
 // Add a new mutation to manually check for expired requests
 export const manualCheckExpiredRequests = mutation({
@@ -1567,6 +1602,67 @@ export const checkRequestStatus = query({
       message: isExpired 
         ? `Request expired ${Math.abs(timeDifference)} seconds ago` 
         : `Request expires in ${Math.abs(timeDifference)} seconds`
+    };
+  }
+});
+
+// Update the notification creation
+export const createNotification = mutation({
+  args: {
+    userId: v.id("users"),
+    type: v.union(v.literal("system"), v.literal("payment_request"), v.literal("payment_sent"), v.literal("payment_received"), v.literal("security")),
+    title: v.string(),
+    description: v.string(),
+    metadata: v.object({
+      gradient: v.string(),
+      expiresAt: v.optional(v.string()),
+      actionRequired: v.boolean(),
+      dismissible: v.boolean(),
+      relatedEntityId: v.optional(v.string()),
+      relatedEntityType: v.optional(v.string()),
+      counterpartyId: v.optional(v.id("users")),
+      visibility: v.union(v.literal("sender_only"), v.literal("recipient_only"), v.literal("both")),
+      role: v.union(v.literal("sender"), v.literal("recipient")),
+      paymentData: v.optional(v.object({
+        amount: v.number(),
+        currency: v.string(),
+        type: v.union(v.literal("lightning"), v.literal("onchain")),
+        status: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.literal("expired"))
+      }))
+    })
+  },
+  handler: async (ctx, args) => {
+    // ... existing code ...
+  }
+});
+
+// Fix cron job implementation
+export const checkExpiredPaymentRequests = cronJobs.interval({
+  name: "check-expired-payment-requests",
+  interval: "1h", // run every hour
+  handler: async (ctx) => {
+    const now = new Date();
+    const pendingRequests = await ctx.db
+      .query("paymentRequests")
+      .filter((q) => q.eq(q.field("status"), "pending"))
+      .collect();
+
+    let expiredCount = 0;
+    for (const request of pendingRequests) {
+      const expiresAt = new Date(request.metadata.expiresAt);
+      if (expiresAt < now) {
+        await ctx.runMutation(internal.paymentRequests.updatePaymentRequestStatus, {
+          paymentRequestId: request._id,
+          status: "expired"
+        });
+        expiredCount++;
+      }
+    }
+
+    return {
+      success: true,
+      pendingCount: pendingRequests.length,
+      expiredCount
     };
   }
 }); 

@@ -210,9 +210,14 @@ export const createNotification = mutation({
 // Check for expired notifications every 30 seconds
 export const checkExpiredNotifications = internal.cron({
   name: "check-expired-notifications",
-  interval: "30s", // Run every 30 seconds
+  interval: "15s", // Run every 15 seconds
   handler: async (ctx) => {
     const now = new Date();
+    
+    console.log("Starting expiration check", {
+      timestamp: now.toISOString(),
+      checkType: "notifications"
+    });
     
     // Find all active payment request notifications that might be expired
     const expiredNotifications = await ctx.db
@@ -226,12 +231,46 @@ export const checkExpiredNotifications = internal.cron({
       )
       .collect();
 
+    console.log("Found notifications to check", {
+      count: expiredNotifications.length,
+      notifications: expiredNotifications.map(n => ({
+        id: n._id,
+        type: n.type,
+        status: n.status,
+        expiresAt: n.metadata.expiresAt,
+        paymentStatus: n.metadata.paymentData?.status,
+        hasRelatedEntity: !!n.metadata.relatedEntityId
+      }))
+    });
+
     // Process each notification
     for (const notification of expiredNotifications) {
       const expiresAt = notification.metadata.expiresAt;
-      if (!expiresAt) continue;
+      if (!expiresAt) {
+        console.log("Skipping notification - no expiration date", {
+          id: notification._id,
+          type: notification.type,
+          status: notification.status
+        });
+        continue;
+      }
 
       const expirationDate = new Date(expiresAt);
+      const isExpired = expirationDate < now;
+      const timeDifference = (now.getTime() - expirationDate.getTime()) / 1000;
+
+      console.log("Checking notification expiration", {
+        id: notification._id,
+        type: notification.type,
+        status: notification.status,
+        expiresAt,
+        now: now.toISOString(),
+        isExpired,
+        timeDifference,
+        paymentStatus: notification.metadata.paymentData?.status,
+        relatedEntityId: notification.metadata.relatedEntityId
+      });
+
       if (expirationDate < now) {
         // Log the expiration
         console.log("Expiring notification", {

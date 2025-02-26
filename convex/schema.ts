@@ -284,7 +284,8 @@ export default defineSchema({
       v.literal("approved"),
       v.literal("declined"),
       v.literal("cancelled"),
-      v.literal("completed")
+      v.literal("completed"),
+      v.literal("expired")
     ),
     metadata: v.object({
       description: v.string(),
@@ -311,11 +312,11 @@ export default defineSchema({
   notifications: defineTable({
     userId: v.id("users"),
     type: v.union(
+      v.literal("system"),
       v.literal("payment_request"),
       v.literal("payment_sent"),
       v.literal("payment_received"),
-      v.literal("security"),
-      v.literal("system")
+      v.literal("security")
     ),
     title: v.string(),
     description: v.string(),
@@ -335,10 +336,7 @@ export default defineSchema({
         actionRequired: v.boolean(),
         timeConstraint: v.boolean(),
         amount: v.number(),
-        role: v.union(
-          v.literal("sender"),
-          v.literal("recipient")
-        )
+        role: v.union(v.literal("sender"), v.literal("recipient"))
       }),
       calculatedPriority: v.number()
     }),
@@ -360,22 +358,16 @@ export default defineSchema({
         v.literal("recipient_only"),
         v.literal("both")
       ),
-      role: v.optional(v.union(
-        v.literal("sender"),
-        v.literal("recipient")
-      )),
-      parentNotificationId: v.optional(v.id("notifications")),
+      role: v.union(v.literal("sender"), v.literal("recipient")),
       paymentData: v.optional(v.object({
         amount: v.number(),
         currency: v.string(),
-        type: v.union(
-          v.literal("lightning"),
-          v.literal("onchain")
-        ),
+        type: v.union(v.literal("lightning"), v.literal("onchain")),
         status: v.union(
           v.literal("pending"),
           v.literal("completed"),
-          v.literal("failed")
+          v.literal("failed"),
+          v.literal("expired")
         )
       }))
     }),

@@ -4,7 +4,7 @@ import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 
-const EXPIRATION_CHECK_INTERVAL = 30000; // 30 seconds
+const EXPIRATION_CHECK_INTERVAL = 15000; // 15 seconds
 
 export function useNotificationExpiration(notification: NotificationData) {
   const [isLocallyExpired, setIsLocallyExpired] = useState(false);
