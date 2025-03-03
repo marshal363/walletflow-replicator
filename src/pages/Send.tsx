@@ -249,5 +249,4 @@ const Send = () => {
     </div>
   );
 };
-
 export default Send;

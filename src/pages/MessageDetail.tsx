@@ -194,5 +194,4 @@ const MessageDetail = () => {
     </div>
   );
 };
-
 export default MessageDetail;

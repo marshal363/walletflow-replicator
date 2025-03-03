@@ -17,6 +17,7 @@ import type * as accounts from "../accounts.js";
 import type * as activityLogs from "../activityLogs.js";
 import type * as contacts from "../contacts.js";
 import type * as conversations from "../conversations.js";
+import type * as crons from "../crons.js";
 import type * as debug from "../debug.js";
 import type * as getUserIds from "../getUserIds.js";
 import type * as init from "../init.js";
@@ -46,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   activityLogs: typeof activityLogs;
   contacts: typeof contacts;
   conversations: typeof conversations;
+  crons: typeof crons;
   debug: typeof debug;
   getUserIds: typeof getUserIds;
   init: typeof init;

@@ -125,6 +125,7 @@ export default defineSchema({
     status: v.union(
       v.literal("pending"),
       v.literal("completed"),
+        v.literal("expired"),
       v.literal("failed")
     ),
     timestamp: v.string(),
@@ -158,6 +159,7 @@ export default defineSchema({
     status: v.union(
       v.literal("pending"),
       v.literal("completed"),
+        v.literal("expired"),
       v.literal("failed")
     ),
     timestamp: v.string(),
@@ -234,7 +236,8 @@ export default defineSchema({
         v.literal("approved"),
         v.literal("declined"),
         v.literal("cancelled"),
-        v.literal("completed")
+        v.literal("completed"),
+        v.literal("expired")
       )),
       replyTo: v.optional(v.id("messages")),
       attachments: v.optional(v.array(v.string())),
@@ -285,6 +288,7 @@ export default defineSchema({
       v.literal("declined"),
       v.literal("cancelled"),
       v.literal("completed"),
+        v.literal("expired"),
       v.literal("expired")
     ),
     metadata: v.object({
@@ -366,6 +370,7 @@ export default defineSchema({
         status: v.union(
           v.literal("pending"),
           v.literal("completed"),
+        v.literal("expired"),
           v.literal("failed"),
           v.literal("expired")
         )

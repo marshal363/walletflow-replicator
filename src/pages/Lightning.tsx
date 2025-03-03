@@ -49,6 +49,5 @@ const Lightning = () => {
       <Navigation />
     </div>
   );
-};
+};export default Lightning;
 
-export default Lightning;

@@ -27,7 +27,7 @@ interface MessageMetadata {
   transferId?: Id<"transferTransactions">;
   requestId?: Id<"paymentRequests">;
   visibility?: "sender_only" | "recipient_only" | "both";
-  requestStatus?: "pending" | "approved" | "declined" | "cancelled";
+  requestStatus?: "pending" | "approved" | "declined" | "cancelled" | "completed" | "expired";
   replyTo?: Id<"messages">;
   attachments?: string[];
   reactions?: Array<{
@@ -266,7 +266,9 @@ export const sendMessage = mutation({
         v.literal("pending"),
         v.literal("approved"),
         v.literal("declined"),
-        v.literal("cancelled")
+        v.literal("cancelled"),
+        v.literal("completed"),
+        v.literal("expired")
       )),
       requestId: v.optional(v.id("paymentRequests")),
       visibility: v.optional(v.union(
@@ -337,7 +339,7 @@ export const sendMessage = mutation({
         recipientId?: Id<"users">;
         senderId?: Id<"users">;
         transferId?: Id<"transferTransactions">;
-        requestStatus?: "pending" | "approved" | "declined" | "cancelled";
+        requestStatus?: "pending" | "approved" | "declined" | "cancelled" | "completed" | "expired";
         requestId?: Id<"paymentRequests">;
         requestTimestamp?: string;
         expiresAt?: string;
@@ -625,7 +627,9 @@ export const updatePaymentRequestStatus = mutation({
       v.literal("pending"),
       v.literal("approved"),
       v.literal("declined"),
-      v.literal("cancelled")
+      v.literal("cancelled"),
+        v.literal("completed"),
+        v.literal("expired")
     )
   },
   handler: async (ctx, args) => {
