@@ -496,6 +496,7 @@ export function PaymentRequestCard({
   };
 
   const getStatusIcon = () => {
+    if (isExpired) return <Clock className="h-4 w-4 text-red-400" />;
     switch (status) {
       case "approved":
         return <Check className="h-4 w-4 text-emerald-400" />;
@@ -510,6 +511,7 @@ export function PaymentRequestCard({
 
   const getStatusBadgeStyles = () => {
     const baseStyles = "px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 border";
+    if (isExpired) return cn(baseStyles, "bg-[#2b1d1d] border-[#472d2d] text-red-400");
     switch (status) {
       case "approved":
         return cn(baseStyles, "bg-[#1a2b1d] border-[#2d4731] text-emerald-400");
