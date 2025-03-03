@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, action } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { calculatePriority } from "./utils";
 import { internal } from "./_generated/api";
@@ -208,9 +208,50 @@ export const createNotification = mutation({
 });
 
 // Check for expired notifications every 30 seconds
-export const checkExpiredNotifications = internal.cron({
-  name: "check-expired-notifications",
-  interval: "15s", // Run every 15 seconds
+// export const checkExpiredNotifications = internal.cron({
+//   name: "check-expired-notifications",
+//   interval: "15s", // Run every 15 seconds
+//   handler: async (ctx) => {
+//     const now = new Date();
+    
+//     console.log("Starting expiration check", {
+//       timestamp: now.toISOString(),
+//       checkType: "notifications"
+//     });
+    
+//     // Find all active payment request notifications that might be expired
+//     const expiredNotifications = await ctx.db
+//       .query("notifications")
+//       .withIndex("by_status", (q) => q.eq("status", "active"))
+//       .filter((q) => 
+//         q.and(
+//           q.eq(q.field("type"), "payment_request"),
+//           q.neq(q.field("metadata.expiresAt"), undefined)
+//         )
+//       )
+//       .collect();
+
+//     console.log("Found notifications to check", {
+//       count: expiredNotifications.length,
+//       notifications: expiredNotifications.map(n => ({
+//         id: n._id,
+//         type: n.type,
+//         status: n.status,
+//         expiresAt: n.metadata.expiresAt,
+//         paymentStatus: n.metadata.paymentData?.status,
+//         hasRelatedEntity: !!n.metadata.relatedEntityId
+//       }))
+//     });
+
+//     // Process each notification
+//     for (const notification of expiredNotifications) {
+//       // ... rest of the implementation ...
+//     }
+//   },
+// });
+
+// Function to be called by the cron job
+export const checkExpiredNotificationsHandler = action({
   handler: async (ctx) => {
     const now = new Date();
     
@@ -243,6 +284,7 @@ export const checkExpiredNotifications = internal.cron({
       }))
     });
 
+    let expiredCount = 0;
     // Process each notification
     for (const notification of expiredNotifications) {
       const expiresAt = notification.metadata.expiresAt;
@@ -286,6 +328,7 @@ export const checkExpiredNotifications = internal.cron({
           "metadata.paymentData.status": "expired",
           updatedAt: now.toISOString()
         });
+        expiredCount++;
 
         // Update related notifications
         if (notification.metadata.parentNotificationId) {
@@ -349,24 +392,19 @@ export const checkExpiredNotifications = internal.cron({
                   });
                 }
               }
-
-              console.log("Payment request marked as expired", {
-                notificationId: notification._id,
-                requestId: request._id,
-                messageId: request.messageId,
-                timestamp: now.toISOString()
-              });
             }
           } catch (error) {
-            console.error("Failed to update payment request status", {
-              error,
-              notificationId: notification._id,
-              relatedEntityId: notification.metadata.relatedEntityId
-            });
+            console.error("Error updating related payment request", error);
           }
         }
       }
     }
+
+    // Return statistics
+    return {
+      checkedCount: expiredNotifications.length,
+      expiredCount: expiredCount
+    };
   }
 });
 

@@ -5,8 +5,9 @@ import { GenericDatabaseWriter } from "convex/server";
 import { DataModel } from "./_generated/dataModel";
 import { MutationCtx } from "./_generated/server";
 import { internalMutation } from "./_generated/server";
-import { Crons } from "convex/server";
 import { cronJobs } from "convex/server";
+//import { Crons } from "convex/server";
+//import { cronJobs } from "convex/server";
 import { internal } from "./_generated/api";
 import { defineSchema, defineTable } from "convex/server";
 
@@ -1339,15 +1340,15 @@ export const checkExpiredRequests = internalMutation({
 });
 
 // Schedule the expiration check to run periodically
-export const crons = new Crons();
-crons.interval(
-  "check-expired-requests",
-  { minutes: 5 },
-  async (ctx) => {
-    console.log("Running scheduled checkExpiredRequests");
-    await checkExpiredRequests.handler(ctx);
-  }
-);
+// export const crons = new Crons();
+// crons.interval(
+//   "check-expired-requests",
+//   { minutes: 5 },
+//   async (ctx) => {
+//     console.log("Running scheduled checkExpiredRequests");
+//     await checkExpiredRequests.handler(ctx);
+//   }
+// );
 
 // Add a new mutation to manually check for expired requests
 export const manualCheckExpiredRequests = mutation({
@@ -1637,32 +1638,32 @@ export const createNotification = mutation({
 });
 
 // Fix cron job implementation
-export const checkExpiredPaymentRequests = cronJobs.interval({
-  name: "check-expired-payment-requests",
-  interval: "1h", // run every hour
-  handler: async (ctx) => {
-    const now = new Date();
-    const pendingRequests = await ctx.db
-      .query("paymentRequests")
-      .filter((q) => q.eq(q.field("status"), "pending"))
-      .collect();
+// export const checkExpiredPaymentRequests = cronJobs.interval({
+//   name: "check-expired-payment-requests",
+//   interval: "1h", // run every hour
+//   handler: async (ctx) => {
+//     const now = new Date();
+//     const pendingRequests = await ctx.db
+//       .query("paymentRequests")
+//       .filter((q) => q.eq(q.field("status"), "pending"))
+//       .collect();
 
-    let expiredCount = 0;
-    for (const request of pendingRequests) {
-      const expiresAt = new Date(request.metadata.expiresAt);
-      if (expiresAt < now) {
-        await ctx.runMutation(internal.paymentRequests.updatePaymentRequestStatus, {
-          paymentRequestId: request._id,
-          status: "expired"
-        });
-        expiredCount++;
-      }
-    }
+//     let expiredCount = 0;
+//     for (const request of pendingRequests) {
+//       const expiresAt = new Date(request.metadata.expiresAt);
+//       if (expiresAt < now) {
+//         await ctx.runMutation(internal.paymentRequests.updatePaymentRequestStatus, {
+//           paymentRequestId: request._id,
+//           status: "expired"
+//         });
+//         expiredCount++;
+//       }
+//     }
 
-    return {
-      success: true,
-      pendingCount: pendingRequests.length,
-      expiredCount
-    };
-  }
-}); 
+//     return {
+//       success: true,
+//       pendingCount: pendingRequests.length,
+//       expiredCount
+//     };
+//   }
+// }); 
