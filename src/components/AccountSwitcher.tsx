@@ -109,8 +109,8 @@ function AccountSwitcher({ onCreateAccount, hideProfileInfo = false }: AccountSw
       const prevId = previousSelectionRef.current;
 
       if (prevId && prevId !== currentId) {
-        const switchDuration = switchStartTimeRef.current ? 
-          Date.now() - switchStartTimeRef.current : 
+        const switchDuration = switchStartTimeRef.current ?
+          Date.now() - switchStartTimeRef.current :
           null;
 
         console.log('🔀 AccountSwitcher State:', {
@@ -218,9 +218,8 @@ function AccountSwitcher({ onCreateAccount, hideProfileInfo = false }: AccountSw
             <motion.button
               layout
               onClick={() => handleAccountChange(account._id.toString())}
-              className={`w-full p-4 rounded-lg ${
-                account._id === selectedAccountId ? 'bg-[#0066FF]' : 'bg-black/40 backdrop-blur-md border border-[#0066FF]/20'
-              } relative overflow-hidden group hover:bg-[#0066FF]/10 transition-colors`}
+              className={`w-full p-4 rounded-lg ${account._id === selectedAccountId ? 'bg-[#0066FF]' : 'bg-black/40 backdrop-blur-md border border-[#0066FF]/20'
+                } relative overflow-hidden group hover:bg-[#0066FF]/10 transition-colors`}
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               transition={{

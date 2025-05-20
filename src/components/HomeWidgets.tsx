@@ -12,6 +12,8 @@ import SuggestedActionsWidget from './widgets/SuggestedActionsWidget';
 import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
+import { useAccountStore } from "@/stores/accountStore";
+import { getCurrentAccountUsername, getUserId } from "@/lib/utils";
 
 interface HomeWidgetsProps {
   selectedWalletId: string;
@@ -170,4 +172,24 @@ export default function HomeWidgets({
     prevAccountIdRef.current = currentAccountId;
     prevWalletsRef.current = wallets;
   }, [accounts, selectedAccountId, wallets, externalSelectedWalletId, internalSelectedWalletId, accountsLoading, isAccountSwitching]);
+
+  // Add near the beginning of the component
+  useEffect(() => {
+    console.log("HomeWidgets - Account Context:", {
+      externalSelectedWalletId,
+      selectedAccountId: useAccountStore.getState().currentAccountId,
+      username: getCurrentAccountUsername(), // Create this helper function
+      timestamp: new Date().toISOString()
+    });
+  }, [externalSelectedWalletId]);
+
+  // Add to notification fetching logic
+  useEffect(() => {
+    console.log("HomeWidgets - Notifications Query Params:", {
+      accountId: useAccountStore.getState().currentAccountId,
+      userId: getUserId(), // Get this from auth context
+      filters: notificationQueryParams, // The actual params being used
+      timestamp: new Date().toISOString()
+    });
+  }, [notificationQueryParams]);
 } 
